@@ -45,6 +45,7 @@ function showView(view) { // 'idle' | 'pick' | 'recording' | 'working' | 'result
   show('pick', view === 'pick');
   show('result', view === 'result');
   show('brand', view !== 'result');
+  show('rec-start', view === 'idle'); // registrare è un'opzione secondaria, solo da qui
   if (view !== 'pick') pausePlayer();
 }
 
@@ -127,6 +128,9 @@ function renderResult(mode, text) {
   $('result-title').textContent = TITLES[mode];
 }
 
+// registrazione fatta nell'app (nome 'registrazione-…'): la traduzione va in inglese, per scrivere a qualcuno in inglese
+const isRecording = (e) => !!e && /^registrazione-/.test(e.name || '');
+
 async function load(forced) {
   const shared = forced || new URLSearchParams(location.search).get('shared');
   try { entry = await idb('readonly', (s) => s.get('latest')); } catch (e) { setStatus('Errore IndexedDB: ' + e, true); return; }
@@ -147,6 +151,8 @@ async function load(forced) {
   resetPlayer();
   $('player').src = objectUrl;
   if (duration) $('t-dur').textContent = fmtDur(duration);
+  const isRec = isRecording(entry);
+  $('tr-sub').textContent = isRec ? 'In inglese' : 'Sempre in italiano';
   const last = safeLS.get('vb_mode') || 'bullets';
   const r = document.querySelector(`input[name=mode][value=${TITLES[last] ? last : 'bullets'}]`);
   r.checked = true;
@@ -308,7 +314,7 @@ async function run() {
     if (mode !== 'full') setStep(2, 'active');
     let notice = '';
     const [out, ev] = await Promise.all([
-      mode === 'full' ? text : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text, seconds: duration || undefined }) }).then((d) => { notice = d.notice || ''; return d.result; }),
+      mode === 'full' ? text : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text, seconds: duration || undefined, target: isRecording(entry) ? 'en' : 'it' }) }).then((d) => { notice = d.notice || ''; return d.result; }),
       getEvent(text),
     ]);
     if (cancelled) throw new ApiError('cancelled', '');

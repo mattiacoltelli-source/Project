@@ -26,6 +26,10 @@ const MODES: Record<string, string> = {
     "Traduci fedelmente il testo in italiano; se è già in italiano restituiscilo invariato. " +
     "Non aggiungere, togliere o riassumere nulla; mantieni nomi propri, numeri, orari e tono; mantieni la prima persona. Solo la traduzione.",
 };
+// traduzione verso l'inglese (audio registrato in app, per scrivere in inglese)
+const TRANSLATE_EN =
+  "Translate the text faithfully into English; if it is already in English, return it unchanged. " +
+  "Do not add, remove or summarize anything; keep proper names, numbers, times and tone; keep the first person. Output only the translation.";
 const bulletsPrompt = (max: number) =>
   `Riassumi il testo in punti elenco BREVI (una riga ciascuno, una sola idea), SEMPRE IN ITALIANO anche se il testo è in un'altra lingua. ` +
   `Al massimo ${max} punti: se servono di più, unisci le idee molto vicine. ` +
@@ -267,7 +271,7 @@ Deno.serve(async (req) => {
         temperature: rewrite ? 0.1 : 0.2,
         max_tokens: rewrite ? Math.min(6000, Math.max(300, Math.ceil(words * 2.5))) : 1500,
         messages: [
-          { role: "system", content: (rewrite ? SYSTEM_BASE : SYSTEM) + (mode === "bullets" ? bulletsPrompt(maxBullets) : MODES[mode]) },
+          { role: "system", content: (rewrite ? SYSTEM_BASE : SYSTEM) + (mode === "bullets" ? bulletsPrompt(maxBullets) : mode === "translate" && body?.target === "en" ? TRANSLATE_EN : MODES[mode]) },
           { role: "user", content: `<trascrizione>\n${text}\n</trascrizione>` },
         ],
       }),
