@@ -77,3 +77,20 @@ export function isGenericWhat(v: string | null): boolean {
   const toks = tokens(v).filter((t) => !STOP.has(t));
   return toks.length === 0 || toks.every((t) => GENERIC_WHAT.has(t));
 }
+
+// --- "Testo pulito": può togliere esitazioni e ripetizioni, non aggiungere né cambiare nulla ---
+// Valida solo se: (1) quasi tutte le parole significative (radici di 5 lettere) c'erano già nel vocale,
+// (2) ogni numero c'era già, (3) la lunghezza resta plausibile (non è un riassunto né una riscrittura più lunga).
+export function cleanFaithful(out: string, text: string): boolean {
+  const stem = (t: string) => t.slice(0, 5);
+  const inTok = tokens(text);
+  const outTok = tokens(out);
+  if (outTok.length === 0) return false;
+  const inStems = new Set(inTok.map(stem));
+  const inAll = new Set(inTok);
+  const content = outTok.filter((t) => t.length >= 4 && !STOP.has(t) && !/^\d+$/.test(t));
+  if (content.length > 0 && content.filter((t) => inStems.has(stem(t))).length / content.length < 0.92) return false;
+  if (outTok.filter((t) => /^\d+$/.test(t)).some((n) => !inAll.has(n))) return false;
+  const ratio = outTok.length / Math.max(1, inTok.length);
+  return ratio >= 0.4 && ratio <= 1.15;
+}

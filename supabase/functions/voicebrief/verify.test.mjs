@@ -1,5 +1,5 @@
 // node --experimental-strip-types supabase/functions/voicebrief/verify.test.mjs
-import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat } from "./verify.ts";
+import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful } from "./verify.ts";
 const T = (s) => new Set(tokens(s));
 const t1 = "Oh allora sabato ci vediamo alle 8, però prima devo passare da Marco a prendere la macchina, quindi magari facciamo direttamente davanti al ristorante da Gigi.";
 const cases = [
@@ -66,5 +66,15 @@ for (const [s, exp] of [[74, 7], [60, 6], [30, 3], [10, 3], [300, 15], [600, 15]
 for (const [w, exp] of [["ci vediamo", true], ["incontro", true], ["appuntamento", true], [null, true], ["partita del Bologna", false], ["colazione", false], ["riunione", false], ["ci vediamo per la colazione", false]]) {
   const got = isGenericWhat(w); if (got !== exp) { bad++; console.log("FAIL isGenericWhat", JSON.stringify(w), "atteso", exp, "ottenuto", got); }
 }
+const orig = "Ehm allora, cioè, domani alle 15, tipo, ci vediamo in ufficio, ehm, con Laura e Paolo, cioè, per la riunione di progetto.";
+for (const [o, exp, why] of [
+  ["Domani alle 15 ci vediamo in ufficio con Laura e Paolo per la riunione di progetto.", true, "pulito ok"],
+  ["Allora, domani alle 15 ci vediamo in ufficio con Laura e Paolo, per la riunione di progetto.", true, "pulito ok con punteggiatura"],
+  ["Domani alle 16 ci vediamo in ufficio con Laura e Paolo per la riunione di progetto.", false, "numero cambiato"],
+  ["Domani alle 15 ci vediamo in ufficio con Laura e Paolo per la riunione di progetto, porta anche il computer.", false, "parole aggiunte"],
+  ["Riunione domani alle 15.", false, "troppo corto: è un riassunto"],
+  ["Domani alle 15 ci vediamo in ufficio con Laura e Marco per la riunione di progetto.", false, "persona cambiata"],
+  ["", false, "vuoto"],
+]) { const got = cleanFaithful(o, orig); if (got !== exp) { bad++; console.log("FAIL cleanFaithful", why, "atteso", exp, "ottenuto", got); } }
 console.log(bad ? `${bad} falliti` : "tutti ok");
 process.exit(bad ? 1 : 0);
