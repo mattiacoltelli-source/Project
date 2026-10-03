@@ -38,8 +38,9 @@ const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padSta
 const setStatus = (msg, isErr) => { $('status').textContent = msg || ''; $('status').classList.toggle('err', !!isErr); };
 const show = (id, on) => { $(id).hidden = !on; };
 
-function showView(view) { // 'idle' | 'pick' | 'working' | 'result'
+function showView(view) { // 'idle' | 'pick' | 'recording' | 'working' | 'result'
   show('idle', view === 'idle');
+  show('recording', view === 'recording');
   show('working', view === 'working');
   show('pick', view === 'pick');
   show('result', view === 'result');
@@ -74,7 +75,16 @@ function seekTo(clientX) {
   if (duration) player.currentTime = Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * duration;
 }
 player.onloadedmetadata = () => {
+  if (player.duration === Infinity) { // webm di MediaRecorder senza durata: la faccio calcolare al browser
+    const fix = () => { player.removeEventListener('timeupdate', fix); player.currentTime = 0; };
+    player.addEventListener('timeupdate', fix);
+    player.currentTime = 1e101;
+    return;
+  }
   if (isFinite(player.duration)) { duration = player.duration; $('t-dur').textContent = fmtDur(duration); }
+};
+player.ondurationchange = () => {
+  if (isFinite(player.duration) && player.duration > 0) { duration = player.duration; $('t-dur').textContent = fmtDur(duration); }
 };
 player.ontimeupdate = paint;
 player.onplay = player.onpause = syncPlayIcon;
@@ -117,8 +127,8 @@ function renderResult(mode, text) {
   $('result-title').textContent = TITLES[mode];
 }
 
-async function load() {
-  const shared = new URLSearchParams(location.search).get('shared');
+async function load(forced) {
+  const shared = forced || new URLSearchParams(location.search).get('shared');
   try { entry = await idb('readonly', (s) => s.get('latest')); } catch (e) { setStatus('Errore IndexedDB: ' + e, true); return; }
   history.replaceState(null, '', location.pathname);
   if (shared === 'nofile') setStatus('Condivisione ricevuta ma senza file audio.', true);
@@ -131,18 +141,19 @@ async function load() {
   transcript = null;
   transcriptJob = null;
   eventInfo = undefined;
-  duration = null;
+  duration = entry.duration || null; // registrazioni: durata nota dal timer (il webm di MediaRecorder non la dichiara)
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   objectUrl = URL.createObjectURL(entry.blob);
   resetPlayer();
   $('player').src = objectUrl;
+  if (duration) $('t-dur').textContent = fmtDur(duration);
   const last = safeLS.get('vb_mode') || 'bullets';
   const r = document.querySelector(`input[name=mode][value=${TITLES[last] ? last : 'bullets'}]`);
   r.checked = true;
   showView('pick');
-  setStatus(shared === 'ok' ? 'Vocale ricevuto.' : '');
+  setStatus(shared === 'ok' ? 'Vocale ricevuto.' : shared === 'rec' ? 'Registrazione pronta.' : '');
   // appena arriva dalla condivisione parte la trascrizione, mentre scegli la modalità; errori ignorati (si ritenta con "Elabora")
-  if (shared === 'ok') getTranscript().catch(() => {});
+  if (shared === 'ok' || shared === 'rec') getTranscript().catch(() => {});
 }
 
 // --- rete ---
@@ -168,7 +179,7 @@ async function api(init) {
 }
 
 function normalizedFile() {
-  const ogg = /\.(opus|ogg|oga)$/i.test(entry.name || '') || /ogg|opus/i.test(entry.type || '');
+  const ogg = /\.(opus|ogg|oga)$/i.test(entry.name || '') || /^audio\/(ogg|opus)/i.test(entry.type || '');
   if (ogg) return new File([entry.blob], 'audio.ogg', { type: 'audio/ogg' });
   return new File([entry.blob], entry.name || 'audio', { type: (entry.type || '').split(';')[0] });
 }
@@ -312,12 +323,86 @@ let ignorePop = false;
 function cancelRun() { cancelled = true; ctls.forEach((c) => c.abort()); }
 window.addEventListener('popstate', () => {
   if (ignorePop) { ignorePop = false; return; }
+  if (rec) { cancelRecording(); return; } // indietro durante la registrazione = annulla
   if (busy) { cancelRun(); return; } // indietro durante l'elaborazione = annulla
   if (!entry) return showView('idle');
   $('go').textContent = 'Elabora';
   showView(history.state && history.state.v === 'result' ? 'result' : 'pick');
 });
 $('cancel').onclick = () => history.back();
+// --- registrazione ---
+const REC_MAX = 600; // 10 minuti, come il limite del servizio
+let rec = null;      // registrazione in corso
+const fmtT = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function pickMime() {
+  if (!window.MediaRecorder) return '';
+  return ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
+}
+function popHistory() { // toglie dalla cronologia la voce "registrazione" e aspetta che sia fatto
+  return new Promise((res) => {
+    if (!(history.state && history.state.v === 'recording')) return res();
+    ignorePop = true;
+    window.addEventListener('popstate', () => res(), { once: true });
+    history.back();
+  });
+}
+async function startRecording() {
+  if (busy || rec) return;
+  if (!navigator.mediaDevices || !window.MediaRecorder) { setStatus('Questo browser non supporta la registrazione.', true); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { setStatus('Non riesco a usare il microfono: controlla il permesso del sito.', true); return; }
+  const mime = pickMime();
+  let recorder;
+  try { recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); }
+  catch { stream.getTracks().forEach((t) => t.stop()); setStatus('Registrazione non disponibile su questo telefono.', true); return; }
+  rec = { recorder, stream, chunks: [], start: Date.now(), mime: recorder.mimeType || mime, cancelled: false, interrupted: false, timer: 0, lock: null };
+  recorder.ondataavailable = (e) => { if (e.data && e.data.size) rec.chunks.push(e.data); };
+  recorder.onstop = finishRecording;
+  const track = stream.getAudioTracks()[0];
+  if (track) track.onended = () => { if (rec && rec.recorder.state === 'recording') { rec.interrupted = true; rec.recorder.stop(); } };
+  recorder.start(1000);
+  try { rec.lock = await navigator.wakeLock.request('screen'); } catch { /* facoltativo */ }
+  $('rec-time').textContent = '0:00';
+  setStatus('');
+  showView('recording');
+  history.pushState({ v: 'recording' }, '');
+  rec.timer = setInterval(() => {
+    const s = (Date.now() - rec.start) / 1000;
+    $('rec-time').textContent = fmtT(s);
+    if (s >= REC_MAX) stopRecording();
+  }, 250);
+}
+function stopRecording() { if (rec && rec.recorder.state === 'recording') rec.recorder.stop(); }
+function cancelRecording() { if (rec) { rec.cancelled = true; stopRecording(); } }
+async function finishRecording() {
+  const r = rec;
+  if (!r) return;
+  clearInterval(r.timer);
+  r.stream.getTracks().forEach((t) => t.stop());
+  try { if (r.lock) r.lock.release(); } catch { /* ignora */ }
+  rec = null;
+  const secs = Math.min(REC_MAX, (Date.now() - r.start) / 1000);
+  const blob = new Blob(r.chunks, { type: r.mime || 'audio/webm' });
+  await popHistory();
+  const back = () => showView(entry ? 'pick' : 'idle');
+  if (r.cancelled) { back(); return; }
+  if (secs < 1 || blob.size < 1000) { back(); setStatus('Registrazione troppo breve.', true); return; }
+  const ext = /mp4/i.test(blob.type) ? 'm4a' : /ogg/i.test(blob.type) ? 'ogg' : 'webm';
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const name = `registrazione-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.${ext}`;
+  try {
+    await idb('readwrite', (s) => s.put({ blob, name, type: blob.type, size: blob.size, receivedAt: Date.now(), duration: secs }, 'latest'));
+  } catch { back(); setStatus('Non riesco a salvare la registrazione.', true); return; }
+  await load('rec');
+  if (r.interrupted) setStatus('Registrazione interrotta: ho tenuto la parte registrata.');
+}
+$('rec-start').onclick = startRecording;
+$('rec-again').onclick = startRecording;
+$('rec-stop').onclick = stopRecording;
+$('rec-cancel').onclick = () => history.back();
+
 $('copy').onclick = async () => {
   try { await navigator.clipboard.writeText(lastOutput); setStatus('Copiato.'); } catch { setStatus('Copia non riuscita.', true); }
 };
