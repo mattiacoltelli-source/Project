@@ -34,10 +34,11 @@ async function idb(mode, fn) {
 }
 
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
-const setStatus = (msg, isErr) => { $('status').textContent = msg || ''; $('status').className = isErr ? 'err' : 'muted'; };
+const setStatus = (msg, isErr) => { $('status').textContent = msg || ''; $('status').classList.toggle('err', !!isErr); };
 const show = (id, on) => { $(id).hidden = !on; };
 
 function showView(view) { // 'idle' | 'pick' | 'result'
+  show('idle', view === 'idle');
   show('pick', view === 'pick');
   show('result', view === 'result');
   show('brand', view !== 'result');
@@ -108,7 +109,6 @@ async function load() {
 
   if (!entry) {
     showView('idle');
-    if (!shared) setStatus('In attesa di un vocale. In WhatsApp: tieni premuto il vocale → Condividi → VoiceBrief.');
     return;
   }
   transcript = null;
@@ -213,7 +213,7 @@ $('clear').onclick = async () => {
   player.removeAttribute('src');
   resetPlayer();
   showView('idle');
-  setStatus('Audio eliminato. In attesa di un vocale.');
+  setStatus('Audio eliminato.');
 };
 $('env').textContent =
   (matchMedia('(display-mode: standalone)').matches ? 'Installata' : 'Browser') + ' · v' + self.VB.VERSION;
