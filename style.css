@@ -108,6 +108,7 @@ li[data-state=done] .w-done { display: block; }
 .ev-row + .ev-row { border-top: 1px solid var(--line); }
 .ev-ico { width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--tint); color: var(--deep); display: flex; align-items: center; justify-content: center; }
 .ev-txt { min-width: 0; }
+.ev-note { margin: 4px 0 12px; font-size: 12px; color: #6d8480; }
 .ev-txt small { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
 .ev-date { display: block; margin-top: 1px; font-size: 14px; font-weight: 500; color: var(--muted); }
 .ev-txt b { display: block; font-size: 17px; font-weight: 700; word-wrap: break-word; }
