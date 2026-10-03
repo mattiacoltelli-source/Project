@@ -1,5 +1,5 @@
 // node --experimental-strip-types supabase/functions/voicebrief/verify.test.mjs
-import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere } from "./verify.ts";
+import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere, usefulEvent } from "./verify.ts";
 const T = (s) => new Set(tokens(s));
 const t1 = "Oh allora sabato ci vediamo alle 8, però prima devo passare da Marco a prendere la macchina, quindi magari facciamo direttamente davanti al ristorante da Gigi.";
 const cases = [
@@ -77,5 +77,7 @@ for (const [o, exp, why] of [
   ["", false, "vuoto"],
 ]) { const got = cleanFaithful(o, orig); if (got !== exp) { bad++; console.log("FAIL cleanFaithful", why, "atteso", exp, "ottenuto", got); } }
 for (const [a, b, exp] of [["McDonald's", "McDonald's", true], ["colazione", "bar Rossi", false], ["partita del Bologna", "stadio", false], [null, "bar", false]]) { const got = sameAsWhere(a, b); if (got !== exp) { bad++; console.log("FAIL sameAsWhere", a, b, got); } }
+for (const [e, exp] of [[{ when: "domani", where: null, who: null, party: null }, false], [{ when: "domani alle 20", where: null, who: "Ema", party: null }, true], [{ when: null, where: "bar", who: null, party: null }, false], [{ when: null, where: "bar", who: "Luca", party: null }, true]]) { const got = usefulEvent(e); if (got !== exp) { bad++; console.log("FAIL usefulEvent", JSON.stringify(e), got); } }
+{ const got = cleanFaithful("Hi Marco, I cannot come tomorrow at seven.", "Um, hi Marco, I can not come tomorrow at 7, you know."); if (!got) { bad++; console.log("FAIL cleanFaithful cannot/seven"); } }
 console.log(bad ? `${bad} falliti` : "tutti ok");
 process.exit(bad ? 1 : 0);
