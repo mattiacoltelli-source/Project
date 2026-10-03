@@ -1,7 +1,7 @@
 // VoiceBrief: audio -> testo (STT OpenAI) -> riassunto (LLM OpenAI).
 // Segreto (Supabase secrets): OPENAI_API_KEY. Nessun contenuto viene salvato o loggato.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { isBooked, isPastRef, supported, tokens } from "./verify.ts";
+import { briefSupported, capBullets, isBooked, isPastRef, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
 
 const ORIGIN = "https://mattiacoltelli-source.github.io";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -17,11 +17,16 @@ const LLM_IN_MICRO_PER_TOKEN = 0.15 * 1.3;
 const LLM_OUT_MICRO_PER_TOKEN = 0.6 * 1.3;
 
 const MODES: Record<string, string> = {
-  bullets:
-    "Riassumi il testo in punti elenco chiari e brevi (uno per idea principale), nella stessa lingua del testo. Solo i punti, niente introduzioni.",
+  bullets: "", // costruito da bulletsPrompt (dipende dalla durata)
   short:
     "Riassumi il testo nel minimo indispensabile: 1-3 frasi, nella stessa lingua del testo. Solo il riassunto.",
 };
+const bulletsPrompt = (max: number) =>
+  `Riassumi il testo in punti elenco BREVI (una riga ciascuno, una sola idea), nella stessa lingua del testo. ` +
+  `Al massimo ${max} punti: se servono di più, unisci le idee molto vicine. ` +
+  `Se dal vocale si capisce con certezza di cosa o di chi si parla (il tema è detto o evidente), apri con una riga "In breve: <una sola frase>"; ` +
+  `se il contesto non è esplicito o il vocale parte a metà discorso, NON scrivere quella riga. Non inventare né dedurre il contesto. ` +
+  `Poi i punti, ognuno su una riga che inizia con "- ". Nessun'altra introduzione.`;
 const EVENT_PROMPT =
   "Stabilisci se nel testo qualcuno propone, fissa o conferma un appuntamento o un incontro (cena, riunione, uscita, visita, chiamata a un orario, ecc.). " +
   "Se sì: has_event true e compila i campi usando SOLO parole dette nel testo, senza dedurre né convertire nulla. " +
@@ -213,11 +218,16 @@ Deno.serve(async (req) => {
     mode = String(body?.mode ?? "");
     const text = String(body?.text ?? "");
     bytes = text.length;
-    if (!MODES[mode]) return done(400, "bad_mode", { error: "bad_mode", message: "Modalità non valida." });
+    if (!Object.hasOwn(MODES, mode)) return done(400, "bad_mode", { error: "bad_mode", message: "Modalità non valida." });
     if (!text.trim() || text.length > MAX_TEXT_CHARS) return done(400, "bad_text", { error: "bad_text", message: "Testo non valido." });
     const inTok = text.length / 2.5 + 200, outTok = Math.min(1500, text.length / 3 + 100);
     if (!(await reserve(inTok * LLM_IN_MICRO_PER_TOKEN + outTok * LLM_OUT_MICRO_PER_TOKEN)))
       return done(429, "budget", { error: "budget", message: "Tetto di spesa mensile raggiunto. Si sblocca il mese prossimo." });
+    // punti proporzionati alla durata (max 6 al minuto): secondi dal player, altrimenti stimati dalle parole
+    const words = text.trim().split(/\s+/).length;
+    const reqSecs = Number(body?.seconds);
+    const secs = reqSecs > 0 && reqSecs <= 900 ? reqSecs : words / 2.5;
+    const maxBullets = maxBulletsFor(secs);
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
@@ -226,14 +236,22 @@ Deno.serve(async (req) => {
         temperature: 0.2,
         max_tokens: 1500,
         messages: [
-          { role: "system", content: SYSTEM + MODES[mode] },
+          { role: "system", content: SYSTEM + (mode === "bullets" ? bulletsPrompt(maxBullets) : MODES[mode]) },
           { role: "user", content: `<trascrizione>\n${text}\n</trascrizione>` },
         ],
       }),
     });
     if (!r.ok) return done(502, `llm_${r.status}`, { error: "provider", message: "Errore del servizio di riassunto." });
-    const out = String((await r.json()).choices?.[0]?.message?.content ?? "").trim();
-    return done(200, "ok", { result: out });
+    let out = String((await r.json()).choices?.[0]?.message?.content ?? "").trim();
+    let outcome = "ok";
+    if (mode === "bullets") {
+      // "In breve" solo se il vocale è abbastanza lungo e la frase poggia su parole davvero dette; tetto rigido ai punti
+      const { brief, rest } = splitBrief(out);
+      const keepBrief = !!brief && words >= 40 && briefSupported(brief, text);
+      if (brief && !keepBrief) outcome = "ok_nobrief";
+      out = (keepBrief ? `In breve: ${brief}\n` : "") + capBullets(rest, maxBullets);
+    }
+    return done(200, outcome, { result: out });
   } catch (e) {
     return done(500, "exception", { error: "server", message: "Errore interno." });
   }

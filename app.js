@@ -95,7 +95,19 @@ function renderResult(mode, text) {
   const box = $('out');
   box.textContent = '';
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-  for (const l of lines) {
+  for (const [i, l] of lines.entries()) {
+    const b = i === 0 ? /^in breve\s*[:\-–]\s*(.+)$/i.exec(l) : null;
+    if (b) { // riga "In breve" in cima, separata dai punti
+      const el = document.createElement('div');
+      el.className = 'brief';
+      const lab = document.createElement('small');
+      lab.textContent = 'In breve';
+      const txt = document.createElement('span');
+      txt.textContent = b[1].replace(/\*\*/g, '');
+      el.append(lab, txt);
+      box.appendChild(el);
+      continue;
+    }
     const m = /^([-*•]|\d+[.)])\s+(.*)$/.exec(l);
     const el = document.createElement(m ? 'div' : 'p');
     if (m) el.className = 'item';
@@ -267,7 +279,7 @@ async function run() {
     setStep(1, 'done');
     if (mode !== 'full') setStep(2, 'active');
     const [out, ev] = await Promise.all([
-      mode === 'full' ? text : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text }) }).then((d) => d.result),
+      mode === 'full' ? text : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text, seconds: duration || undefined }) }).then((d) => d.result),
       getEvent(text),
     ]);
     if (cancelled) throw new ApiError('cancelled', '');
