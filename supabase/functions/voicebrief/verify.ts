@@ -78,6 +78,13 @@ export function isGenericWhat(v: string | null): boolean {
   return toks.length === 0 || toks.every((t) => GENERIC_WHAT.has(t));
 }
 
+// "cosa" che ripete solo il luogo ("McDonald's" / "McDonald's") non informa: lo si scarta
+export function sameAsWhere(what: string | null, where: string | null): boolean {
+  if (!what || !where) return false;
+  const w = tokens(what).filter((t) => !STOP.has(t)), d = new Set(tokens(where).filter((t) => !STOP.has(t)));
+  return w.length > 0 && w.every((t) => d.has(t));
+}
+
 // --- "Testo pulito": può togliere esitazioni e ripetizioni, non aggiungere né cambiare nulla ---
 // Valida solo se: (1) quasi tutte le parole significative (radici di 5 lettere) c'erano già nel vocale,
 // (2) ogni numero c'era già, (3) la lunghezza resta plausibile (non è un riassunto né una riscrittura più lunga).

@@ -1,5 +1,5 @@
 // node --experimental-strip-types supabase/functions/voicebrief/verify.test.mjs
-import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful } from "./verify.ts";
+import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere } from "./verify.ts";
 const T = (s) => new Set(tokens(s));
 const t1 = "Oh allora sabato ci vediamo alle 8, però prima devo passare da Marco a prendere la macchina, quindi magari facciamo direttamente davanti al ristorante da Gigi.";
 const cases = [
@@ -76,5 +76,6 @@ for (const [o, exp, why] of [
   ["Domani alle 15 ci vediamo in ufficio con Laura e Marco per la riunione di progetto.", false, "persona cambiata"],
   ["", false, "vuoto"],
 ]) { const got = cleanFaithful(o, orig); if (got !== exp) { bad++; console.log("FAIL cleanFaithful", why, "atteso", exp, "ottenuto", got); } }
+for (const [a, b, exp] of [["McDonald's", "McDonald's", true], ["colazione", "bar Rossi", false], ["partita del Bologna", "stadio", false], [null, "bar", false]]) { const got = sameAsWhere(a, b); if (got !== exp) { bad++; console.log("FAIL sameAsWhere", a, b, got); } }
 console.log(bad ? `${bad} falliti` : "tutti ok");
 process.exit(bad ? 1 : 0);
