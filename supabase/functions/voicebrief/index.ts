@@ -1,5 +1,5 @@
 // VoiceBrief: audio -> testo (STT OpenAI) -> riassunto (LLM OpenAI).
-// Segreti (Supabase secrets): OPENAI_API_KEY, APP_TOKEN. Nessun contenuto viene salvato o loggato.
+// Segreto (Supabase secrets): OPENAI_API_KEY. Nessun contenuto viene salvato o loggato.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const ORIGIN = "https://mattiacoltelli-source.github.io";
@@ -30,19 +30,12 @@ const SYSTEM =
 const cors = {
   "Access-Control-Allow-Origin": ORIGIN,
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "content-type, x-vb-token",
+  "Access-Control-Allow-Headers": "content-type",
   "Access-Control-Max-Age": "86400",
   "Vary": "Origin",
 };
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "content-type": "application/json" } });
-
-function safeEqual(a: string, b: string) {
-  const ea = new TextEncoder().encode(a), eb = new TextEncoder().encode(b);
-  let d = ea.length ^ eb.length;
-  for (let i = 0; i < Math.max(ea.length, eb.length); i++) d |= (ea[i] ?? 0) ^ (eb[i] ?? 0);
-  return d === 0;
-}
 
 // durata di un file Ogg: granule position dell'ultima pagina / 48000 (Opus). null se non Ogg.
 function oggSeconds(buf: Uint8Array): number | null {
@@ -87,10 +80,8 @@ Deno.serve(async (req) => {
     return json(status, body);
   };
   try {
-    const appToken = Deno.env.get("APP_TOKEN");
     const key = Deno.env.get("OPENAI_API_KEY");
-    if (!appToken || !key) return done(500, "misconfigured", { error: "server_misconfigured" });
-    if (!safeEqual(req.headers.get("x-vb-token") ?? "", appToken)) return done(401, "unauthorized", { error: "unauthorized" });
+    if (!key) return done(500, "misconfigured", { error: "server_misconfigured" });
 
     const ct = req.headers.get("content-type") ?? "";
 
