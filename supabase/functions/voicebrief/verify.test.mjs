@@ -1,5 +1,5 @@
 // node --experimental-strip-types supabase/functions/voicebrief/verify.test.mjs
-import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor } from "./verify.ts";
+import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat } from "./verify.ts";
 const T = (s) => new Set(tokens(s));
 const t1 = "Oh allora sabato ci vediamo alle 8, però prima devo passare da Marco a prendere la macchina, quindi magari facciamo direttamente davanti al ristorante da Gigi.";
 const cases = [
@@ -63,5 +63,8 @@ const eight = "In breve: x.\n" + Array.from({ length: 8 }, (_, i) => `- p${i + 1
 const capped = capBullets(eight, 6);
 if (capped.split("\n").filter((l) => l.startsWith("- ")).length !== 6 || !capped.startsWith("In breve")) { bad++; console.log("FAIL capBullets", JSON.stringify(capped)); }
 for (const [s, exp] of [[74, 7], [60, 6], [30, 3], [10, 3], [300, 15], [600, 15]]) { if (maxBulletsFor(s) !== exp) { bad++; console.log("FAIL maxBulletsFor", s, maxBulletsFor(s), "atteso", exp); } }
+for (const [w, exp] of [["ci vediamo", true], ["incontro", true], ["appuntamento", true], [null, true], ["partita del Bologna", false], ["colazione", false], ["riunione", false], ["ci vediamo per la colazione", false]]) {
+  const got = isGenericWhat(w); if (got !== exp) { bad++; console.log("FAIL isGenericWhat", JSON.stringify(w), "atteso", exp, "ottenuto", got); }
+}
 console.log(bad ? `${bad} falliti` : "tutti ok");
 process.exit(bad ? 1 : 0);

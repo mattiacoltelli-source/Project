@@ -107,13 +107,13 @@ li[data-state=done] .w-done { display: block; }
 .out .item { display: flex; gap: 12px; align-items: flex-start; }
 .out .item::before { content: ''; width: 8px; height: 8px; margin-top: 10px; flex: none; border-radius: 50%; background: var(--brand); }
 
-.event { margin-top: 12px; padding: 18px 20px 6px; border: 2px solid var(--line); border-radius: 22px; background: #fff; }
+.event { margin-top: 12px; padding: 18px 20px 8px; border: 2px solid var(--line); border-radius: 22px; background: #fff; }
 .event .eyebrow { margin-bottom: 4px; }
 .ev-row { display: flex; align-items: center; gap: 14px; padding: 10px 0; }
 .ev-row + .ev-row { border-top: 1px solid var(--line); }
 .ev-ico { width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--tint); color: var(--deep); display: flex; align-items: center; justify-content: center; }
 .ev-txt { min-width: 0; }
-.ev-note { margin: 4px 0 12px; font-size: 12px; color: #6d8480; }
+.ev-note { margin: 8px 4px 12px; font-size: 12px; color: #6d8480; }
 .ev-txt small { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
 .ev-date { display: block; margin-top: 1px; font-size: 14px; font-weight: 500; color: var(--muted); }
 .ev-txt b { display: block; font-size: 17px; font-weight: 700; word-wrap: break-word; }
