@@ -36,3 +36,36 @@ const PAST = /\b(ieri|altroieri|scors[oaie])\b/i;
 export function isPastRef(v: string | null): boolean {
   return !!v && PAST.test(v);
 }
+
+// --- riassunto per punti: riga "In breve" e tetto ai punti ---
+// "In breve" regge solo se le sue parole principali (radici di 5 lettere) compaiono davvero nel vocale.
+const GENERIC = new Set(["racconta", "parla", "descrive", "spiega", "tratta", "presenta", "riguarda", "vocale", "messaggio", "breve", "persona"]);
+export function briefSupported(line: string, text: string): boolean {
+  const stem = (t: string) => t.slice(0, 5);
+  const textStems = new Set(tokens(text).map(stem));
+  const content = tokens(line).filter((t) => t.length >= 4 && !STOP.has(t) && !GENERIC.has(t));
+  if (content.length === 0) return false;
+  return content.filter((t) => textStems.has(stem(t))).length / content.length >= 0.6;
+}
+
+export function splitBrief(out: string): { brief: string | null; rest: string } {
+  const lines = out.split("\n");
+  const i = lines.findIndex((l) => l.trim());
+  const m = i >= 0 ? /^\s*in breve\s*[:\-–]\s*(.+)$/i.exec(lines[i]) : null;
+  if (!m) return { brief: null, rest: out };
+  return { brief: m[1].trim(), rest: lines.slice(i + 1).join("\n").replace(/^\n+/, "") };
+}
+
+// tetto rigido ai punti elenco: oltre il massimo si scartano i successivi
+export function capBullets(out: string, max: number): string {
+  let n = 0;
+  return out
+    .split("\n")
+    .filter((l) => (/^\s*([-*•]|\d+[.)])\s+/.test(l) ? ++n <= max : true))
+    .join("\n");
+}
+
+// massimo 6 punti al minuto (1 ogni 10 s), tra 3 e 15
+export function maxBulletsFor(seconds: number): number {
+  return Math.min(15, Math.max(3, Math.round(seconds / 10)));
+}

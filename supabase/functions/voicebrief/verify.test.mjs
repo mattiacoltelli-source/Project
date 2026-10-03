@@ -1,5 +1,5 @@
 // node --experimental-strip-types supabase/functions/voicebrief/verify.test.mjs
-import { tokens, supported, isBooked, isPastRef } from "./verify.ts";
+import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor } from "./verify.ts";
 const T = (s) => new Set(tokens(s));
 const t1 = "Oh allora sabato ci vediamo alle 8, però prima devo passare da Marco a prendere la macchina, quindi magari facciamo direttamente davanti al ristorante da Gigi.";
 const cases = [
@@ -48,5 +48,20 @@ for (const [v, exp] of past) {
   const got = isPastRef(v);
   if (got !== exp) { bad++; console.log("FAIL isPastRef", JSON.stringify(v), "atteso", exp, "ottenuto", got); }
 }
-console.log(bad ? `${bad} falliti` : `tutti ok (${cases.length + booked.length + past.length})`);
+const serie = "Allora ti racconto questa serie che sto guardando, c'è questa ragazza che studiava a casa e poi va in una scuola pubblica, viene bullizzata, cresce in una bolla, diversa dalle altre ragazze, poi ha il ciclo e la prendono in giro con dei video sui social e lei sviluppa la telecinesi, sposta oggetti e fa danni, diventa arrabbiata e cattiva.";
+const brief = [
+  ["In breve: serie TV su una ragazza bullizzata che sviluppa la telecinesi.", serie, true],
+  ["Parla di una vacanza in Sicilia con la famiglia.", serie, false],      // contesto inventato
+  ["Racconta di una serie sul bullismo scolastico.", serie, true],
+  ["", serie, false],
+];
+for (const [l, t, exp] of brief) { const got = briefSupported(l, t); if (got !== exp) { bad++; console.log("FAIL briefSupported", JSON.stringify(l), "atteso", exp, "ottenuto", got); } }
+const sb = splitBrief("In breve: una serie TV.\n- uno\n- due");
+if (sb.brief !== "una serie TV." || sb.rest !== "- uno\n- due") { bad++; console.log("FAIL splitBrief", JSON.stringify(sb)); }
+if (splitBrief("- uno\n- due").brief !== null) { bad++; console.log("FAIL splitBrief senza riga"); }
+const eight = "In breve: x.\n" + Array.from({ length: 8 }, (_, i) => `- p${i + 1}`).join("\n");
+const capped = capBullets(eight, 6);
+if (capped.split("\n").filter((l) => l.startsWith("- ")).length !== 6 || !capped.startsWith("In breve")) { bad++; console.log("FAIL capBullets", JSON.stringify(capped)); }
+for (const [s, exp] of [[74, 7], [60, 6], [30, 3], [10, 3], [300, 15], [600, 15]]) { if (maxBulletsFor(s) !== exp) { bad++; console.log("FAIL maxBulletsFor", s, maxBulletsFor(s), "atteso", exp); } }
+console.log(bad ? `${bad} falliti` : "tutti ok");
 process.exit(bad ? 1 : 0);
