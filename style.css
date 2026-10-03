@@ -21,9 +21,9 @@ button { cursor: pointer; }
 .logo { width: 32px; height: 32px; border-radius: 10px; background: var(--brand); color: #fff; display: flex; align-items: center; justify-content: center; }
 .wordmark { font-size: 18px; font-weight: 800; letter-spacing: -.2px; color: var(--deep); }
 
-.status { margin: 16px 0 0; color: var(--muted); min-height: 0; }
+.status { align-self: flex-start; margin: 16px 0 0; padding: 8px 14px; border-radius: 12px; background: var(--tint); color: var(--deep); font-size: 14px; font-weight: 600; }
 .status:empty { display: none; }
-.status.err { color: #b00020; }
+.status.err { background: #fdeaea; color: #a3001b; }
 
 h1 { margin: 28px 0 0; font-size: 26px; line-height: 1.2; font-weight: 800; letter-spacing: -.5px; }
 
@@ -34,6 +34,15 @@ h1 { margin: 28px 0 0; font-size: 26px; line-height: 1.2; font-weight: 800; lett
 .bar::before { content: ''; position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px; background: #d3e2df; }
 .fill { position: relative; height: 4px; width: 0; border-radius: 2px; background: var(--brand); }
 .times { display: flex; justify-content: space-between; font-size: 12px; font-weight: 500; color: #5b7470; }
+
+.idle { align-items: center; justify-content: center; text-align: center; padding-bottom: 48px; }
+.idle h1 { margin-top: 28px; }
+.hero { width: 104px; height: 104px; border-radius: 50%; background: var(--tint); color: var(--brand); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 14px #f2f9f8; }
+.lead { margin: 8px 0 0; color: var(--muted); }
+.steps { list-style: none; margin: 32px 0 0; padding: 8px 16px; width: 100%; border-radius: 20px; background: var(--soft); text-align: left; }
+.steps li { display: flex; align-items: center; gap: 14px; min-height: 56px; font-size: 16px; }
+.steps li + li { border-top: 1px solid var(--line); }
+.steps .n { width: 28px; height: 28px; flex: none; border-radius: 50%; background: var(--brand); color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 
 .modes { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
 .mode { position: relative; display: flex; align-items: center; gap: 14px; min-height: 76px; padding: 14px 16px; border: 2px solid var(--line); border-radius: 18px; background: #fff; }
