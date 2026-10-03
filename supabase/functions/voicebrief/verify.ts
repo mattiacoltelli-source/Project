@@ -69,3 +69,11 @@ export function capBullets(out: string, max: number): string {
 export function maxBulletsFor(seconds: number): number {
   return Math.min(15, Math.max(3, Math.round(seconds / 10)));
 }
+
+// "cosa" troppo generico ("ci vediamo", "incontro") non informa: lo si scarta
+const GENERIC_WHAT = new Set(["ci", "vediamo", "vediamoci", "troviamo", "troviamoci", "incontriamo", "sentiamo", "vado", "andiamo", "facciamo", "incontro", "appuntamento", "evento", "cosa"]);
+export function isGenericWhat(v: string | null): boolean {
+  if (!v) return true;
+  const toks = tokens(v).filter((t) => !STOP.has(t));
+  return toks.length === 0 || toks.every((t) => GENERIC_WHAT.has(t));
+}

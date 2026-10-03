@@ -10,7 +10,7 @@ const safeLS = {
 let entry = null;        // file ricevuto (da IndexedDB)
 let duration = null;     // secondi, dai metadati del player
 let transcript = null;   // solo in memoria: cambiare modalità non richiama l'STT
-let eventInfo;           // appuntamento estratto: undefined = non ancora chiesto, null = nessuno
+let eventInfo;           // impegni estratti: undefined = non ancora chiesti, [] = nessuno
 let objectUrl = null;
 let busy = false;
 
@@ -210,7 +210,7 @@ async function getEvent(text) {
   if (eventInfo !== undefined) return eventInfo;
   try {
     const data = await api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ step: 'event', text }) });
-    eventInfo = data.event || null;
+    eventInfo = Array.isArray(data.events) ? data.events : (data.event ? [data.event] : []);
   } catch { return null; } // non salvo l'errore: riprova alla prossima elaborazione
   return eventInfo;
 }
@@ -244,28 +244,43 @@ function resolveDay(text, ref) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-const EV_ROWS = [['when', 'ev-when', 'Quando'], ['where', 'ev-where', 'Dove'], ['party', 'ev-party', 'Per'], ['who', 'ev-who', 'Con chi']];
+const EV_FIELDS = [['what', 'Cosa'], ['when', 'Quando'], ['where', 'Dove'], ['party', 'Per'], ['who', 'Con chi']];
 // solo formattazione, nessuna deduzione: "20" -> "alle 20"; "per quattro" -> "quattro" (l'etichetta è già "Per")
 function evValue(k, v) {
   if (k === 'when' && /^\d{1,2}([:.]\d{2})?$/.test(v)) return 'alle ' + v;
   if (k === 'party') return v.replace(/^per\s+/i, '');
   return v;
 }
-function renderEvent(ev) {
-  const title = ev && ev.kind === 'booking' ? 'Prenotazione' : 'Appuntamento';
-  $('ev-title').textContent = title;
-  const rows = ev ? EV_ROWS.filter(([k]) => ev[k]) : [];
-  for (const [k, id] of EV_ROWS) {
-    const el = $(id);
-    el.hidden = !(ev && ev[k]);
-    if (ev && ev[k]) el.querySelector('b').textContent = evValue(k, ev[k]);
+// una card per impegno (max 3); le righe mancanti non esistono proprio
+function renderEvents(list) {
+  const box = $('events');
+  box.textContent = '';
+  const ref = referenceDate();
+  let n = 0;
+  for (const ev of list || []) {
+    const rows = EV_FIELDS.filter(([k]) => ev[k]);
+    if (!rows.length) continue;
+    const card = $('ev-tpl').content.firstElementChild.cloneNode(true);
+    const title = ev.kind === 'booking' ? 'Prenotazione' : 'Appuntamento';
+    card.querySelector('.ev-title').textContent = title;
+    let hint = null;
+    for (const row of [...card.querySelectorAll('.ev-row')]) {
+      const k = row.dataset.k;
+      if (!ev[k]) { row.remove(); continue; }
+      row.querySelector('b').textContent = evValue(k, ev[k]);
+      if (k === 'when') {
+        hint = resolveDay(ev.when, ref);
+        const d = row.querySelector('.ev-date');
+        d.hidden = !hint;
+        d.textContent = hint || '';
+      }
+    }
+    box.appendChild(card);
+    lastOutput += `\n\n${title}\n` + rows.map(([k, label]) => `${label}: ${evValue(k, ev[k])}${k === 'when' && hint ? ` (${hint.toLowerCase()})` : ''}`).join('\n');
+    n++;
   }
-  const hint = ev && ev.when ? resolveDay(ev.when, referenceDate()) : null;
-  const dEl = $('ev-when').querySelector('.ev-date');
-  dEl.hidden = !hint;
-  dEl.textContent = hint || '';
-  show('event', rows.length > 0);
-  if (rows.length) lastOutput += `\n\n${title}\n` + rows.map(([k, , label]) => `${label}: ${evValue(k, ev[k])}${k === 'when' && hint ? ` (${hint.toLowerCase()})` : ''}`).join('\n');
+  show('events', n > 0);
+  show('ev-note', n > 0);
 }
 
 const setStep = (n, state) => { $('ws-' + n).dataset.state = state; };
@@ -295,7 +310,7 @@ async function run() {
     ]);
     if (cancelled) throw new ApiError('cancelled', '');
     renderResult(mode, out || '(risultato vuoto)');
-    renderEvent(ev);
+    renderEvents(ev);
     show('share', !!navigator.share);
     showView('result');
     history.replaceState({ v: 'result' }, '');
