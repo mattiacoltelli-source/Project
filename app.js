@@ -38,8 +38,9 @@ const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padSta
 const setStatus = (msg, isErr) => { $('status').textContent = msg || ''; $('status').classList.toggle('err', !!isErr); };
 const show = (id, on) => { $(id).hidden = !on; };
 
-function showView(view) { // 'idle' | 'pick' | 'result'
+function showView(view) { // 'idle' | 'pick' | 'working' | 'result'
   show('idle', view === 'idle');
+  show('working', view === 'working');
   show('pick', view === 'pick');
   show('result', view === 'result');
   show('brand', view !== 'result');
@@ -130,18 +131,22 @@ async function load() {
 }
 
 // --- rete ---
+const ctls = new Set();   // richieste in corso (per Annulla)
+let cancelled = false;
 class ApiError extends Error { constructor(code, message) { super(message); this.code = code; } }
 
 async function api(init) {
   if (!navigator.onLine) throw new ApiError('offline', 'Nessuna connessione. L’audio resta salvato: riprova appena torni online.');
   const ctl = new AbortController();
+  ctls.add(ctl);
   const timer = setTimeout(() => ctl.abort(), 120000);
   let res;
   try {
     res = await fetch(self.VB.API_URL, { ...init, signal: ctl.signal, headers: init.headers });
   } catch {
+    if (cancelled) throw new ApiError('cancelled', '');
     throw new ApiError('offline', 'Connessione assente o instabile. L’audio resta salvato: riprova.');
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); ctls.delete(ctl); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(data.error || 'server', data.message || 'Errore del servizio. Riprova tra poco.');
   return data;
@@ -220,33 +225,45 @@ function renderEvent(ev) {
   if (rows.length) lastOutput += '\n\nAppuntamento\n' + rows.map(([k, , label]) => `${label}: ${ev[k]}${k === 'when' && hint ? ` (${hint.toLowerCase()})` : ''}`).join('\n');
 }
 
+const setStep = (n, state) => { $('ws-' + n).dataset.state = state; };
+const SUM_LABELS = { bullets: 'Preparo il riassunto per punti', short: 'Preparo il riassunto sintetico' };
+
 async function run() {
   if (busy) return;
   const mode = document.querySelector('input[name=mode]:checked').value;
   safeLS.set('vb_mode', mode);
   busy = true;
-  $('go').disabled = true;
-  $('go').textContent = 'Elaboro…';
+  cancelled = false;
   setStatus('');
+  $('ws-2').hidden = mode === 'full';
+  $('ws-2-label').textContent = SUM_LABELS[mode] || '';
+  setStep(1, transcript !== null ? 'done' : 'active');
+  setStep(2, transcript !== null && mode !== 'full' ? 'active' : 'pending');
+  showView('working');
+  history.pushState({ v: 'working' }, '');
   try {
     const text = await getTranscript();
+    if (cancelled) throw new ApiError('cancelled', '');
+    setStep(1, 'done');
+    if (mode !== 'full') setStep(2, 'active');
     const [out, ev] = await Promise.all([
       mode === 'full' ? text : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text }) }).then((d) => d.result),
       getEvent(text),
     ]);
+    if (cancelled) throw new ApiError('cancelled', '');
     renderResult(mode, out || '(risultato vuoto)');
     renderEvent(ev);
     show('share', !!navigator.share);
     showView('result');
-    history.pushState({ v: 'result' }, '');
+    history.replaceState({ v: 'result' }, '');
     setStatus('');
   } catch (e) {
-    setStatus(e instanceof ApiError ? e.message : 'Errore imprevisto.', true);
+    showView('pick');
+    if (history.state && history.state.v === 'working') { ignorePop = true; history.back(); }
+    if (e.code !== 'cancelled') setStatus(e instanceof ApiError ? e.message : 'Errore imprevisto.', true);
     $('go').textContent = e.code === 'offline' ? 'Riprova' : 'Elabora';
   } finally {
     busy = false;
-    if ($('go').textContent === 'Elaboro…') $('go').textContent = 'Elabora';
-    $('go').disabled = false;
   }
 }
 
@@ -259,11 +276,16 @@ const goBack = () => {
 $('again').onclick = goBack;
 $('back').onclick = goBack;
 // il tasto/gesto indietro torna alla schermata precedente senza uscire dall'app
+let ignorePop = false;
+function cancelRun() { cancelled = true; ctls.forEach((c) => c.abort()); }
 window.addEventListener('popstate', () => {
+  if (ignorePop) { ignorePop = false; return; }
+  if (busy) { cancelRun(); return; } // indietro durante l'elaborazione = annulla
   if (!entry) return showView('idle');
   $('go').textContent = 'Elabora';
   showView(history.state && history.state.v === 'result' ? 'result' : 'pick');
 });
+$('cancel').onclick = () => history.back();
 $('copy').onclick = async () => {
   try { await navigator.clipboard.writeText(lastOutput); setStatus('Copiato.'); } catch { setStatus('Copia non riuscita.', true); }
 };

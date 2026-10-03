@@ -34,6 +34,23 @@
       </ol>
     </section>
 
+    <section id="working" class="screen working" hidden>
+      <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <h1>Sto elaborando</h1>
+      <p class="lead">Di solito bastano pochi secondi.</p>
+      <ul class="wsteps" aria-live="polite">
+        <li id="ws-1" data-state="pending">
+          <span class="wi"><i class="w-pend"></i><i class="w-act"></i><svg class="w-done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+          <span>Trascrivo l'audio</span>
+        </li>
+        <li id="ws-2" data-state="pending">
+          <span class="wi"><i class="w-pend"></i><i class="w-act"></i><svg class="w-done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+          <span id="ws-2-label">Preparo il riassunto</span>
+        </li>
+      </ul>
+      <button id="cancel" class="link">Annulla</button>
+    </section>
+
     <section id="pick" class="screen" hidden>
       <div class="player">
         <button id="play" class="play" aria-label="Riproduci">
