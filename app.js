@@ -231,9 +231,11 @@ function referenceDate() {
 }
 function resolveDay(text, ref) {
   if (EXPLICIT_DATE.test(text)) return null;
-  const m = /(?<!\p{L})(dopodomani|domani|domattina|oggi|stasera|stanotte|lunedì|lunedi|martedì|martedi|mercoledì|mercoledi|giovedì|giovedi|venerdì|venerdi|sabato|domenica)(?!\p{L})/iu.exec(text);
+  const m = /(?<!\p{L})(dopodomani|domani|domattina|oggi|stasera|stanotte|lunedì|lunedi|martedì|martedi|mercoledì|mercoledi|giovedì|giovedi|venerdì|venerdi|sabato|domenica|tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?!\p{L})/iu.exec(text);
   if (!m) return null;
-  const w = noAccents(m[1]);
+  const EN = { tomorrow: 'domani', today: 'oggi', tonight: 'stasera', monday: 'lunedi', tuesday: 'martedi', wednesday: 'mercoledi', thursday: 'giovedi', friday: 'venerdi', saturday: 'sabato', sunday: 'domenica' };
+  const w0 = noAccents(m[1]);
+  const w = EN[w0] || w0;
   let add;
   if (w === 'dopodomani') add = 2;
   else if (w === 'domani' || w === 'domattina') add = 1;
