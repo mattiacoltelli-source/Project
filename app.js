@@ -221,20 +221,28 @@ function resolveDay(text, ref) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-const EV_ROWS = [['when', 'ev-when', 'Quando'], ['where', 'ev-where', 'Dove'], ['who', 'ev-who', 'Con chi']];
+const EV_ROWS = [['when', 'ev-when', 'Quando'], ['where', 'ev-where', 'Dove'], ['party', 'ev-party', 'Per'], ['who', 'ev-who', 'Con chi']];
+// solo formattazione, nessuna deduzione: "20" -> "alle 20"; "per quattro" -> "quattro" (l'etichetta è già "Per")
+function evValue(k, v) {
+  if (k === 'when' && /^\d{1,2}([:.]\d{2})?$/.test(v)) return 'alle ' + v;
+  if (k === 'party') return v.replace(/^per\s+/i, '');
+  return v;
+}
 function renderEvent(ev) {
+  const title = ev && ev.kind === 'booking' ? 'Prenotazione' : 'Appuntamento';
+  $('ev-title').textContent = title;
   const rows = ev ? EV_ROWS.filter(([k]) => ev[k]) : [];
   for (const [k, id] of EV_ROWS) {
     const el = $(id);
     el.hidden = !(ev && ev[k]);
-    if (ev && ev[k]) el.querySelector('b').textContent = ev[k];
+    if (ev && ev[k]) el.querySelector('b').textContent = evValue(k, ev[k]);
   }
   const hint = ev && ev.when ? resolveDay(ev.when, referenceDate()) : null;
   const dEl = $('ev-when').querySelector('.ev-date');
   dEl.hidden = !hint;
   dEl.textContent = hint || '';
   show('event', rows.length > 0);
-  if (rows.length) lastOutput += '\n\nAppuntamento\n' + rows.map(([k, , label]) => `${label}: ${ev[k]}${k === 'when' && hint ? ` (${hint.toLowerCase()})` : ''}`).join('\n');
+  if (rows.length) lastOutput += `\n\n${title}\n` + rows.map(([k, , label]) => `${label}: ${evValue(k, ev[k])}${k === 'when' && hint ? ` (${hint.toLowerCase()})` : ''}`).join('\n');
 }
 
 const setStep = (n, state) => { $('ws-' + n).dataset.state = state; };

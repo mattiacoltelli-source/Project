@@ -1,7 +1,7 @@
 // VoiceBrief: audio -> testo (STT OpenAI) -> riassunto (LLM OpenAI).
 // Segreto (Supabase secrets): OPENAI_API_KEY. Nessun contenuto viene salvato o loggato.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { supported, tokens } from "./verify.ts";
+import { isBooked, isPastRef, supported, tokens } from "./verify.ts";
 
 const ORIGIN = "https://mattiacoltelli-source.github.io";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -25,10 +25,12 @@ const MODES: Record<string, string> = {
 const EVENT_PROMPT =
   "Stabilisci se nel testo qualcuno propone, fissa o conferma un appuntamento o un incontro (cena, riunione, uscita, visita, chiamata a un orario, ecc.). " +
   "Se sì: has_event true e compila i campi usando SOLO parole dette nel testo, senza dedurre né convertire nulla. " +
-  "when = giorno e/o ora esattamente come detti (es. 'sabato alle 8' resta 'sabato alle 8', non convertire in 24 ore). " +
+  "when = giorno e/o ora esattamente come detti, con la preposizione (es. 'alle 20', 'sabato alle 8'; non convertire in 24 ore). " +
   "where = luogo come detto. " +
   "who = persone con cui ci si incontra o che partecipano; non chi è nominato solo per altri motivi. " +
   "what = nome dell'evento solo se detto esplicitamente (es. 'cena', 'riunione'), altrimenti null. " +
+  "kind = 'booking' SOLO se qualcuno dice di aver GIÀ prenotato (es. 'ho prenotato da Gianni'); intenzioni, proposte o richieste di prenotare ('devo prenotare', 'prenoti tu?') non sono 'booking': in quel caso 'appointment'. " +
+  "party = per una prenotazione, il numero di persone come detto (es. 'per quattro'), altrimenti null. " +
   "Se non sei sicuro al 100% di un campo, restituiscilo null: è meglio omettere che sbagliare. " +
   "Per ciò che non è detto usa il valore JSON null (non la parola \"null\"). Non calcolare date. " +
   "Eventi passati, ipotetici, vaghi o senza proposta concreta (es. 'magari un giorno ci vediamo'): has_event false.";
@@ -155,7 +157,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           model: LLM_MODEL,
           temperature: 0,
-          max_tokens: 200,
+          max_tokens: 250,
           response_format: {
             type: "json_schema",
             json_schema: {
@@ -164,8 +166,8 @@ Deno.serve(async (req) => {
               schema: {
                 type: "object",
                 additionalProperties: false,
-                required: ["has_event", "what", "when", "where", "who"],
-                properties: { has_event: { type: "boolean" }, what: nullableStr, when: nullableStr, where: nullableStr, who: nullableStr },
+                required: ["has_event", "kind", "what", "when", "where", "who", "party"],
+                properties: { has_event: { type: "boolean" }, kind: { type: "string", enum: ["appointment", "booking"] }, what: nullableStr, when: nullableStr, where: nullableStr, who: nullableStr, party: nullableStr },
               },
             },
           },
@@ -177,7 +179,7 @@ Deno.serve(async (req) => {
       });
       if (!er.ok) return done(502, `event_${er.status}`, { error: "provider", message: "Errore del servizio." });
       let dropped = 0;
-      let event: { what: string | null; when: string | null; where: string | null; who: string | null } | null = null;
+      let event: { kind: string; what: string | null; when: string | null; where: string | null; who: string | null; party: string | null } | null = null;
       try {
         const o = JSON.parse(String((await er.json()).choices?.[0]?.message?.content ?? "{}"));
         const clean = (v: unknown) => {
@@ -188,11 +190,21 @@ Deno.serve(async (req) => {
           // ogni campo deve poggiare su parole davvero presenti nel testo, altrimenti si scarta
           const T = new Set(tokens(etext));
           const keep = (v: string | null) => (v && supported(v, T) ? v : null);
-          const e = { what: keep(clean(o.what)), when: keep(clean(o.when)), where: keep(clean(o.where)), who: keep(clean(o.who)) };
-          const proposed = [o.what, o.when, o.where, o.who].filter((v) => clean(v)).length;
-          const kept = [e.what, e.when, e.where, e.who].filter(Boolean).length;
+          // Prenotazione solo con prova lessicale di una prenotazione già fatta; altrimenti resta Appuntamento
+          const booking = o.kind === "booking" && isBooked(etext);
+          const e = {
+            kind: booking ? "booking" : "appointment",
+            what: keep(clean(o.what)), when: keep(clean(o.when)), where: keep(clean(o.where)), who: keep(clean(o.who)),
+            party: booking ? keep(clean(o.party)) : null,
+          };
+          const proposed = [o.what, o.when, o.where, o.who, o.party].filter((v) => clean(v)).length;
+          const kept = [e.what, e.when, e.where, e.who, e.party].filter(Boolean).length;
           dropped = proposed - kept;
-          if (e.when || e.where) event = e;
+          // due letture possibili => niente card: il modello dice "prenotazione" ma il testo non lo prova;
+          // una prenotazione senza "quando" non è utile; un "quando" già passato non è un appuntamento
+          const ambiguous = o.kind === "booking" && !booking;
+          const needsWhen = booking && !e.when;
+          if (!ambiguous && !needsWhen && !isPastRef(e.when) && (e.when || e.where)) event = e;
         }
       } catch { /* nessun evento */ }
       return done(200, (event ? "ok_event" : "ok_none") + (dropped ? `_dropped${dropped}` : ""), { event });

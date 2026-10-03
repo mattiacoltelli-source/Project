@@ -21,3 +21,18 @@ export function supported(value: string | null, textTokens: Set<string>): boolea
   const toks = tokens(value).filter((t) => !STOP.has(t));
   return toks.length > 0 && toks.every((t) => textTokens.has(t));
 }
+
+// "Prenotazione" solo se qualcuno dice di aver GIÀ prenotato: serve una forma conclusa ("ho prenotato",
+// "la prenotazione") in una frase senza dubbio, intenzione, richiesta, negazione o domanda.
+const BOOKED = /\b(prenotat[oaie]|prenotazion[ei])\b/i;
+const HEDGE = /\b(non|ancora|forse|magari|se|potrei|potremmo|dovrei|dovremmo|vorrei|voglio|devo|dobbiamo|prenoti|prenota|prenotare|prenotiamo|prenoterò|prenotero|boh)\b/i;
+export function isBooked(text: string): boolean {
+  const sentences = text.match(/[^.!?\n]+[.!?]?/g) ?? [];
+  return sentences.some((s) => BOOKED.test(s) && !HEDGE.test(s) && !s.trim().endsWith("?"));
+}
+
+// un "quando" già passato ("ieri sera", "venerdì scorso") non è un appuntamento
+const PAST = /\b(ieri|altroieri|scors[oaie])\b/i;
+export function isPastRef(v: string | null): boolean {
+  return !!v && PAST.test(v);
+}
