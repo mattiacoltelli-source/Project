@@ -56,11 +56,17 @@ function resetPlayer() {
   syncPlayIcon();
 }
 function pausePlayer() { if (!player.paused) player.pause(); }
+let raf = 0;
+function paint() {
+  $('t-cur').textContent = fmtDur(player.currentTime);
+  if (duration) $('fill').style.width = Math.min(100, (player.currentTime / duration) * 100) + '%';
+}
+function loop() { paint(); raf = player.paused ? 0 : requestAnimationFrame(loop); }
 function syncPlayIcon() {
   const playing = !player.paused;
-  $('play').querySelector('.i-play').hidden = playing;
-  $('play').querySelector('.i-pause').hidden = !playing;
+  $('play').classList.toggle('playing', playing);
   $('play').setAttribute('aria-label', playing ? 'Pausa' : 'Riproduci');
+  if (playing && !raf) raf = requestAnimationFrame(loop);
 }
 function seekTo(clientX) {
   const r = $('bar').getBoundingClientRect();
@@ -69,12 +75,9 @@ function seekTo(clientX) {
 player.onloadedmetadata = () => {
   if (isFinite(player.duration)) { duration = player.duration; $('t-dur').textContent = fmtDur(duration); }
 };
-player.ontimeupdate = () => {
-  $('t-cur').textContent = fmtDur(player.currentTime);
-  if (duration) $('fill').style.width = Math.min(100, (player.currentTime / duration) * 100) + '%';
-};
+player.ontimeupdate = paint;
 player.onplay = player.onpause = syncPlayIcon;
-player.onended = () => { player.currentTime = 0; $('fill').style.width = '0'; syncPlayIcon(); };
+player.onended = () => { player.currentTime = 0; paint(); syncPlayIcon(); };
 player.onerror = () => setStatus('Il browser non riesce a riprodurre questo audio.', true);
 $('play').onclick = () => { if (player.paused) player.play().catch(() => {}); else player.pause(); };
 $('bar').onpointerdown = (e) => { seekTo(e.clientX); $('bar').setPointerCapture(e.pointerId); $('bar').onpointermove = (m) => seekTo(m.clientX); };
@@ -172,6 +175,35 @@ async function getEvent(text) {
   return eventInfo;
 }
 
+// --- data esatta per "domani", "sabato", ... (calcolata qui, non dal modello) ---
+const DAYS = ['domenica', 'lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato'];
+const noAccents = (s) => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+const EXPLICIT_DATE = /\d{1,2}\s*(\/|-)\s*\d{1,2}|\d{1,2}\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i;
+// giorno in cui il vocale è stato inviato: dal nome WhatsApp (PTT-20261003-...), altrimenti dalla ricezione
+function referenceDate() {
+  const m = /(20\d{2})(\d{2})(\d{2})/.exec((entry && entry.name) || '');
+  if (m) {
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (d.getMonth() === +m[2] - 1 && d.getDate() === +m[3]) return d;
+  }
+  const r = new Date((entry && entry.receivedAt) || Date.now());
+  return new Date(r.getFullYear(), r.getMonth(), r.getDate());
+}
+function resolveDay(text, ref) {
+  if (EXPLICIT_DATE.test(text)) return null;
+  const m = /(?<!\p{L})(dopodomani|domani|domattina|oggi|stasera|stanotte|lunedì|lunedi|martedì|martedi|mercoledì|mercoledi|giovedì|giovedi|venerdì|venerdi|sabato|domenica)(?!\p{L})/iu.exec(text);
+  if (!m) return null;
+  const w = noAccents(m[1]);
+  let add;
+  if (w === 'dopodomani') add = 2;
+  else if (w === 'domani' || w === 'domattina') add = 1;
+  else if (w === 'oggi' || w === 'stasera' || w === 'stanotte') add = 0;
+  else add = ((DAYS.indexOf(w) - ref.getDay() + 6) % 7) + 1; // prossimo giorno con quel nome
+  const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() + add);
+  const s = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long' }).format(d);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 const EV_ROWS = [['when', 'ev-when', 'Quando'], ['where', 'ev-where', 'Dove'], ['who', 'ev-who', 'Con chi']];
 function renderEvent(ev) {
   const rows = ev ? EV_ROWS.filter(([k]) => ev[k]) : [];
@@ -180,8 +212,12 @@ function renderEvent(ev) {
     el.hidden = !(ev && ev[k]);
     if (ev && ev[k]) el.querySelector('b').textContent = ev[k];
   }
+  const hint = ev && ev.when ? resolveDay(ev.when, referenceDate()) : null;
+  const dEl = $('ev-when').querySelector('.ev-date');
+  dEl.hidden = !hint;
+  dEl.textContent = hint || '';
   show('event', rows.length > 0);
-  if (rows.length) lastOutput += '\n\nAppuntamento\n' + rows.map(([k, , label]) => `${label}: ${ev[k]}`).join('\n');
+  if (rows.length) lastOutput += '\n\nAppuntamento\n' + rows.map(([k, , label]) => `${label}: ${ev[k]}${k === 'when' && hint ? ` (${hint.toLowerCase()})` : ''}`).join('\n');
 }
 
 async function run() {

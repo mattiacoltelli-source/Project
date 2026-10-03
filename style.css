@@ -29,6 +29,9 @@ h1 { margin: 28px 0 0; font-size: 26px; line-height: 1.2; font-weight: 800; lett
 
 .player { margin-top: 24px; display: flex; align-items: center; gap: 14px; padding: 12px 16px 12px 12px; border-radius: 18px; background: var(--soft); }
 .play { width: 44px; height: 44px; flex: none; padding: 0; border: 0; border-radius: 50%; background: var(--brand); color: #fff; display: flex; align-items: center; justify-content: center; }
+.play .i-pause { display: none; }
+.play.playing .i-play { display: none; }
+.play.playing .i-pause { display: block; }
 .track { flex: 1; min-width: 0; }
 .bar { height: 28px; display: flex; align-items: center; position: relative; touch-action: none; }
 .bar::before { content: ''; position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px; background: #d3e2df; }
@@ -84,6 +87,7 @@ h1 { margin: 28px 0 0; font-size: 26px; line-height: 1.2; font-weight: 800; lett
 .ev-ico { width: 40px; height: 40px; flex: none; border-radius: 12px; background: var(--tint); color: var(--deep); display: flex; align-items: center; justify-content: center; }
 .ev-txt { min-width: 0; }
 .ev-txt small { display: block; font-size: 12px; font-weight: 600; color: var(--muted); }
+.ev-date { display: block; margin-top: 1px; font-size: 14px; font-weight: 500; color: var(--muted); }
 .ev-txt b { display: block; font-size: 17px; font-weight: 700; word-wrap: break-word; }
 
 .env { margin: 4px 0 12px; font-size: 12px; color: #6d8480; text-align: center; }
