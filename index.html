@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#128c7e">
+  <title>VoiceBrief</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="update" class="banner" hidden>Nuova versione. <button id="reload">Ricarica</button></div>
+  <main>
+    <h1>VoiceBrief</h1>
+    <p id="status" class="muted">In attesa di un vocale. Da WhatsApp: tieni premuto il vocale → Condividi → VoiceBrief.</p>
+    <section id="file" hidden>
+      <dl>
+        <dt>Nome</dt><dd id="f-name"></dd>
+        <dt>MIME</dt><dd id="f-type"></dd>
+        <dt>Estensione</dt><dd id="f-ext"></dd>
+        <dt>Dimensione</dt><dd id="f-size"></dd>
+        <dt>Ricevuto</dt><dd id="f-time"></dd>
+      </dl>
+      <audio id="player" controls></audio>
+      <p id="play-err" class="err" hidden></p>
+      <button id="clear">Elimina</button>
+    </section>
+    <p class="muted small" id="env"></p>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
