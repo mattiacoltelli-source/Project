@@ -46,7 +46,7 @@ function showView(view) { // 'idle' | 'pick' | 'result'
 async function load() {
   const shared = new URLSearchParams(location.search).get('shared');
   try { entry = await idb('readonly', (s) => s.get('latest')); } catch (e) { setStatus('Errore IndexedDB: ' + e, true); return; }
-  if (shared) history.replaceState(null, '', location.pathname);
+  history.replaceState(null, '', location.pathname);
   if (shared === 'nofile') setStatus('Condivisione ricevuta ma senza file audio.', true);
   if (shared === 'error') setStatus('Errore nel leggere il file condiviso.', true);
 
@@ -126,6 +126,7 @@ async function run() {
     $('out').textContent = out || '(risultato vuoto)';
     show('share', !!navigator.share);
     showView('result');
+    history.pushState({ v: 'result' }, '');
     setStatus('');
   } catch (e) {
     setStatus(e instanceof ApiError ? e.message : 'Errore imprevisto.', true);
@@ -138,7 +139,16 @@ async function run() {
 
 // --- eventi ---
 $('go').onclick = run;
-$('again').onclick = () => { $('go').textContent = 'Elabora'; showView('pick'); };
+$('again').onclick = () => {
+  $('go').textContent = 'Elabora';
+  if (history.state && history.state.v === 'result') history.back(); else showView('pick');
+};
+// il tasto/gesto indietro torna alla schermata precedente senza uscire dall'app
+window.addEventListener('popstate', () => {
+  if (!entry) return showView('idle');
+  $('go').textContent = 'Elabora';
+  showView(history.state && history.state.v === 'result' ? 'result' : 'pick');
+});
 $('copy').onclick = async () => {
   try { await navigator.clipboard.writeText($('out').textContent); setStatus('Copiato.'); } catch { setStatus('Copia non riuscita.', true); }
 };
