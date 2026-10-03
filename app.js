@@ -10,6 +10,7 @@ const safeLS = {
 let entry = null;        // file ricevuto (da IndexedDB)
 let duration = null;     // secondi, dai metadati del player
 let transcript = null;   // solo in memoria: cambiare modalità non richiama l'STT
+let eventInfo;           // appuntamento estratto: undefined = non ancora chiesto, null = nessuno
 let objectUrl = null;
 let busy = false;
 
@@ -112,6 +113,7 @@ async function load() {
     return;
   }
   transcript = null;
+  eventInfo = undefined;
   duration = null;
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   objectUrl = URL.createObjectURL(entry.blob);
@@ -160,6 +162,28 @@ async function getTranscript() {
   return transcript;
 }
 
+// appuntamento (dove/quando/con chi): chiamata leggera, mai bloccante
+async function getEvent(text) {
+  if (eventInfo !== undefined) return eventInfo;
+  try {
+    const data = await api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ step: 'event', text }) });
+    eventInfo = data.event || null;
+  } catch { return null; } // non salvo l'errore: riprova alla prossima elaborazione
+  return eventInfo;
+}
+
+const EV_ROWS = [['when', 'ev-when', 'Quando'], ['where', 'ev-where', 'Dove'], ['who', 'ev-who', 'Con chi']];
+function renderEvent(ev) {
+  const rows = ev ? EV_ROWS.filter(([k]) => ev[k]) : [];
+  for (const [k, id] of EV_ROWS) {
+    const el = $(id);
+    el.hidden = !(ev && ev[k]);
+    if (ev && ev[k]) el.querySelector('b').textContent = ev[k];
+  }
+  show('event', rows.length > 0);
+  if (rows.length) lastOutput += '\n\nAppuntamento\n' + rows.map(([k, , label]) => `${label}: ${ev[k]}`).join('\n');
+}
+
 async function run() {
   if (busy) return;
   const mode = document.querySelector('input[name=mode]:checked').value;
@@ -170,8 +194,12 @@ async function run() {
   setStatus('');
   try {
     const text = await getTranscript();
-    const out = mode === 'full' ? text : (await api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text }) })).result;
+    const [out, ev] = await Promise.all([
+      mode === 'full' ? text : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text }) }).then((d) => d.result),
+      getEvent(text),
+    ]);
     renderResult(mode, out || '(risultato vuoto)');
+    renderEvent(ev);
     show('share', !!navigator.share);
     showView('result');
     history.pushState({ v: 'result' }, '');
@@ -208,7 +236,7 @@ $('share').onclick = async () => {
 };
 $('clear').onclick = async () => {
   await idb('readwrite', (s) => s.delete('latest'));
-  entry = null; transcript = null;
+  entry = null; transcript = null; eventInfo = undefined;
   pausePlayer();
   player.removeAttribute('src');
   resetPlayer();
