@@ -85,12 +85,11 @@ async function api(init) {
   const timer = setTimeout(() => ctl.abort(), 120000);
   let res;
   try {
-    res = await fetch(self.VB.API_URL, { ...init, signal: ctl.signal, headers: { ...(init.headers || {}), 'x-vb-token': safeLS.get('vb_token') || '' } });
+    res = await fetch(self.VB.API_URL, { ...init, signal: ctl.signal, headers: init.headers });
   } catch {
     throw new ApiError('offline', 'Connessione assente o instabile. L’audio resta salvato: riprova.');
   } finally { clearTimeout(timer); }
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) { safeLS.set('vb_token', ''); show('token-box', true); throw new ApiError('auth', 'Codice di accesso non valido.'); }
   if (!res.ok) throw new ApiError(data.error || 'server', data.message || 'Errore del servizio. Riprova tra poco.');
   return data;
 }
@@ -153,18 +152,8 @@ $('clear').onclick = async () => {
   showView('idle');
   setStatus('Audio eliminato. In attesa di un vocale.');
 };
-$('token-save').onclick = () => {
-  const v = $('token').value.trim();
-  if (!v) return;
-  safeLS.set('vb_token', v);
-  $('token').value = '';
-  show('token-box', false);
-  setStatus('Codice salvato.');
-};
-
 $('env').textContent =
   (matchMedia('(display-mode: standalone)').matches ? 'Installata' : 'Browser') + ' · v' + self.VB.VERSION;
-show('token-box', !safeLS.get('vb_token'));
 
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
