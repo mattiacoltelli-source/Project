@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_SECONDS = 10 * 60;
-const TITLES = { full: 'Trascrizione completa', bullets: 'Riassunto per punti', short: 'Riassunto sintetico' };
+const TITLES = { full: 'Trascrizione completa', bullets: 'Riassunto per punti', short: 'Riassunto sintetico', clean: 'Testo pulito', translate: 'Traduzione' };
 const safeLS = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignora */ } },
@@ -284,7 +284,7 @@ function renderEvents(list) {
 }
 
 const setStep = (n, state) => { $('ws-' + n).dataset.state = state; };
-const SUM_LABELS = { bullets: 'Preparo il riassunto per punti', short: 'Preparo il riassunto sintetico' };
+const SUM_LABELS = { bullets: 'Preparo il riassunto per punti', short: 'Preparo il riassunto sintetico', clean: 'Pulisco il testo', translate: 'Traduco il testo' };
 
 async function run() {
   if (busy) return;
@@ -304,8 +304,9 @@ async function run() {
     if (cancelled) throw new ApiError('cancelled', '');
     setStep(1, 'done');
     if (mode !== 'full') setStep(2, 'active');
+    let notice = '';
     const [out, ev] = await Promise.all([
-      mode === 'full' ? text : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text, seconds: duration || undefined }) }).then((d) => d.result),
+      mode === 'full' ? text : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text, seconds: duration || undefined }) }).then((d) => { notice = d.notice || ''; return d.result; }),
       getEvent(text),
     ]);
     if (cancelled) throw new ApiError('cancelled', '');
@@ -314,7 +315,7 @@ async function run() {
     show('share', !!navigator.share);
     showView('result');
     history.replaceState({ v: 'result' }, '');
-    setStatus('');
+    setStatus(notice);
   } catch (e) {
     showView('pick');
     if (history.state && history.state.v === 'working') { ignorePop = true; history.back(); }
