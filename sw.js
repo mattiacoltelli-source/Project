@@ -1,6 +1,6 @@
-const VERSION = 'v1';
-const CACHE = 'voicebrief-' + VERSION;
-const SHELL = ['./', 'index.html', 'app.js', 'style.css', 'manifest.webmanifest', 'icons/icon-192.png'];
+importScripts('config.js');
+const CACHE = 'voicebrief-' + self.VB.VERSION;
+const SHELL = ['./', 'index.html', 'app.js', 'config.js', 'style.css', 'manifest.webmanifest', 'icons/icon-192.png'];
 const SHARE_PATH = new URL('share-target', self.registration.scope).pathname;
 
 function openDb() {
