@@ -33,7 +33,6 @@ async function idb(mode, fn) {
   } finally { db.close(); }
 }
 
-const fmtSize = (n) => (n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB' : (n / 1024 / 1024).toFixed(2) + ' MB');
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const setStatus = (msg, isErr) => { $('status').textContent = msg || ''; $('status').className = isErr ? 'err' : 'muted'; };
 const show = (id, on) => { $(id).hidden = !on; };
@@ -41,6 +40,63 @@ const show = (id, on) => { $(id).hidden = !on; };
 function showView(view) { // 'idle' | 'pick' | 'result'
   show('pick', view === 'pick');
   show('result', view === 'result');
+  show('brand', view !== 'result');
+  if (view !== 'pick') pausePlayer();
+}
+
+// --- player ---
+const player = $('player');
+function resetPlayer() {
+  duration = null;
+  $('fill').style.width = '0';
+  $('t-cur').textContent = '0:00';
+  $('t-dur').textContent = '–:––';
+  syncPlayIcon();
+}
+function pausePlayer() { if (!player.paused) player.pause(); }
+function syncPlayIcon() {
+  const playing = !player.paused;
+  $('play').querySelector('.i-play').hidden = playing;
+  $('play').querySelector('.i-pause').hidden = !playing;
+  $('play').setAttribute('aria-label', playing ? 'Pausa' : 'Riproduci');
+}
+function seekTo(clientX) {
+  const r = $('bar').getBoundingClientRect();
+  if (duration) player.currentTime = Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * duration;
+}
+player.onloadedmetadata = () => {
+  if (isFinite(player.duration)) { duration = player.duration; $('t-dur').textContent = fmtDur(duration); }
+};
+player.ontimeupdate = () => {
+  $('t-cur').textContent = fmtDur(player.currentTime);
+  if (duration) $('fill').style.width = Math.min(100, (player.currentTime / duration) * 100) + '%';
+};
+player.onplay = player.onpause = syncPlayIcon;
+player.onended = () => { player.currentTime = 0; $('fill').style.width = '0'; syncPlayIcon(); };
+player.onerror = () => setStatus('Il browser non riesce a riprodurre questo audio.', true);
+$('play').onclick = () => { if (player.paused) player.play().catch(() => {}); else player.pause(); };
+$('bar').onpointerdown = (e) => { seekTo(e.clientX); $('bar').setPointerCapture(e.pointerId); $('bar').onpointermove = (m) => seekTo(m.clientX); };
+$('bar').onpointerup = () => { $('bar').onpointermove = null; };
+$('bar').onkeydown = (e) => {
+  if (e.key === 'ArrowRight') player.currentTime += 5;
+  if (e.key === 'ArrowLeft') player.currentTime -= 5;
+};
+
+// --- risultato ---
+let lastOutput = '';
+function renderResult(mode, text) {
+  lastOutput = text;
+  const box = $('out');
+  box.textContent = '';
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  for (const l of lines) {
+    const m = /^([-*•]|\d+[.)])\s+(.*)$/.exec(l);
+    const el = document.createElement(m ? 'div' : 'p');
+    if (m) el.className = 'item';
+    el.textContent = (m ? m[2] : l).replace(/\*\*/g, '');
+    box.appendChild(el);
+  }
+  $('result-title').textContent = TITLES[mode];
 }
 
 async function load() {
@@ -57,18 +113,10 @@ async function load() {
   }
   transcript = null;
   duration = null;
-  $('f-name').textContent = entry.name || '(vuoto)';
-  $('f-type').textContent = entry.type || '(vuoto)';
-  $('f-size').textContent = fmtSize(entry.size);
-  $('f-dur').textContent = '…';
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   objectUrl = URL.createObjectURL(entry.blob);
-  const p = $('player');
-  p.onloadedmetadata = () => {
-    if (isFinite(p.duration)) { duration = p.duration; $('f-dur').textContent = fmtDur(duration); }
-  };
-  p.onerror = () => { $('f-dur').textContent = 'non leggibile'; };
-  p.src = objectUrl;
+  resetPlayer();
+  $('player').src = objectUrl;
   const last = safeLS.get('vb_mode') || 'bullets';
   const r = document.querySelector(`input[name=mode][value=${TITLES[last] ? last : 'bullets'}]`);
   r.checked = true;
@@ -118,12 +166,12 @@ async function run() {
   safeLS.set('vb_mode', mode);
   busy = true;
   $('go').disabled = true;
-  setStatus('Elaboro…');
+  $('go').textContent = 'Elaboro…';
+  setStatus('');
   try {
     const text = await getTranscript();
     const out = mode === 'full' ? text : (await api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text }) })).result;
-    $('result-title').textContent = TITLES[mode];
-    $('out').textContent = out || '(risultato vuoto)';
+    renderResult(mode, out || '(risultato vuoto)');
     show('share', !!navigator.share);
     showView('result');
     history.pushState({ v: 'result' }, '');
@@ -133,16 +181,19 @@ async function run() {
     $('go').textContent = e.code === 'offline' ? 'Riprova' : 'Elabora';
   } finally {
     busy = false;
+    if ($('go').textContent === 'Elaboro…') $('go').textContent = 'Elabora';
     $('go').disabled = false;
   }
 }
 
 // --- eventi ---
 $('go').onclick = run;
-$('again').onclick = () => {
+const goBack = () => {
   $('go').textContent = 'Elabora';
   if (history.state && history.state.v === 'result') history.back(); else showView('pick');
 };
+$('again').onclick = goBack;
+$('back').onclick = goBack;
 // il tasto/gesto indietro torna alla schermata precedente senza uscire dall'app
 window.addEventListener('popstate', () => {
   if (!entry) return showView('idle');
@@ -150,15 +201,17 @@ window.addEventListener('popstate', () => {
   showView(history.state && history.state.v === 'result' ? 'result' : 'pick');
 });
 $('copy').onclick = async () => {
-  try { await navigator.clipboard.writeText($('out').textContent); setStatus('Copiato.'); } catch { setStatus('Copia non riuscita.', true); }
+  try { await navigator.clipboard.writeText(lastOutput); setStatus('Copiato.'); } catch { setStatus('Copia non riuscita.', true); }
 };
 $('share').onclick = async () => {
-  try { await navigator.share({ text: $('out').textContent }); } catch { /* annullato */ }
+  try { await navigator.share({ text: lastOutput }); } catch { /* annullato */ }
 };
 $('clear').onclick = async () => {
   await idb('readwrite', (s) => s.delete('latest'));
   entry = null; transcript = null;
-  $('player').removeAttribute('src');
+  pausePlayer();
+  player.removeAttribute('src');
+  resetPlayer();
   showView('idle');
   setStatus('Audio eliminato. In attesa di un vocale.');
 };
