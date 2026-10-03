@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_SECONDS = 10 * 60;
-const TITLES = { full: 'Trascrizione completa', bullets: 'Riassunto per punti', short: 'Riassunto sintetico', clean: 'Testo pulito', translate: 'Traduzione' };
+const TITLES = { full: 'Trascrizione completa', bullets: 'Riassunto per punti', clean: 'Testo pulito', translate: 'Traduzione' };
 const safeLS = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignora */ } },
@@ -284,7 +284,7 @@ function renderEvents(list) {
 }
 
 const setStep = (n, state) => { $('ws-' + n).dataset.state = state; };
-const SUM_LABELS = { bullets: 'Preparo il riassunto per punti', short: 'Preparo il riassunto sintetico', clean: 'Pulisco il testo', translate: 'Traduco il testo' };
+const SUM_LABELS = { bullets: 'Preparo il riassunto per punti', clean: 'Pulisco il testo', translate: 'Traduco il testo' };
 
 async function run() {
   if (busy) return;
