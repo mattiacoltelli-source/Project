@@ -117,6 +117,7 @@ async function load() {
     return;
   }
   transcript = null;
+  transcriptJob = null;
   eventInfo = undefined;
   duration = null;
   if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -128,6 +129,8 @@ async function load() {
   r.checked = true;
   showView('pick');
   setStatus(shared === 'ok' ? 'Vocale ricevuto.' : '');
+  // appena arriva dalla condivisione parte la trascrizione, mentre scegli la modalità; errori ignorati (si ritenta con "Elabora")
+  if (shared === 'ok') getTranscript().catch(() => {});
 }
 
 // --- rete ---
@@ -158,16 +161,25 @@ function normalizedFile() {
   return new File([entry.blob], entry.name || 'audio', { type: (entry.type || '').split(';')[0] });
 }
 
-async function getTranscript() {
-  if (transcript !== null) return transcript;
-  if (entry.size > MAX_BYTES) throw new ApiError('too_big', 'Audio oltre 10 MB.');
-  if (duration && duration > MAX_SECONDS) throw new ApiError('too_long', 'Audio oltre 10 minuti.');
-  const fd = new FormData();
-  fd.append('audio', normalizedFile());
-  const data = await api({ method: 'POST', body: fd });
-  if (!data.text) throw new ApiError('empty', 'Nessun parlato riconosciuto nell’audio.');
-  transcript = data.text;
-  return transcript;
+// la trascrizione può partire in anticipo (appena arriva il vocale): una sola richiesta, riusata da "Elabora"
+let transcriptJob = null;
+function getTranscript() {
+  if (transcript !== null) return Promise.resolve(transcript);
+  if (!transcriptJob) {
+    const mine = entry;
+    const job = (async () => {
+      if (mine.size > MAX_BYTES) throw new ApiError('too_big', 'Audio oltre 10 MB.');
+      if (duration && duration > MAX_SECONDS) throw new ApiError('too_long', 'Audio oltre 10 minuti.');
+      const fd = new FormData();
+      fd.append('audio', normalizedFile());
+      const data = await api({ method: 'POST', body: fd });
+      if (!data.text) throw new ApiError('empty', 'Nessun parlato riconosciuto nell’audio.');
+      if (entry === mine) transcript = data.text; // se nel frattempo è arrivato un altro vocale, scarta
+      return data.text;
+    })().finally(() => { if (transcriptJob === job) transcriptJob = null; });
+    transcriptJob = job;
+  }
+  return transcriptJob;
 }
 
 // appuntamento (dove/quando/con chi): chiamata leggera, mai bloccante
