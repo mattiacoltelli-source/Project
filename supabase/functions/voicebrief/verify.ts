@@ -5,6 +5,10 @@ const NUM: Record<string, string> = {
   dieci: "10", undici: "11", dodici: "12", tredici: "13", quattordici: "14", quindici: "15", sedici: "16",
   diciassette: "17", diciotto: "18", diciannove: "19", venti: "20", ventuno: "21", ventidue: "22",
   ventitre: "23", ventiquattro: "24",
+  // inglese (stessi numeri a parole = cifre, per confrontare "seven" e "7")
+  one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10",
+  eleven: "11", twelve: "12", thirteen: "13", fourteen: "14", fifteen: "15", sixteen: "16", seventeen: "17",
+  eighteen: "18", nineteen: "19", twenty: "20",
 };
 const STOP = new Set([
   "il", "lo", "la", "le", "i", "gli", "un", "l", "di", "del", "dello", "della", "dei", "degli", "delle",
@@ -95,9 +99,17 @@ export function cleanFaithful(out: string, text: string): boolean {
   if (outTok.length === 0) return false;
   const inStems = new Set(inTok.map(stem));
   const inAll = new Set(inTok);
+  // parole unite o divise dal rifacimento ("can not" -> "cannot") non sono aggiunte: si confrontano anche le coppie adiacenti unite
+  const joined = new Set(inTok.slice(1).map((t, i) => stem(inTok[i] + t)));
+  const known = (t: string) => inStems.has(stem(t)) || joined.has(stem(t));
   const content = outTok.filter((t) => t.length >= 4 && !STOP.has(t) && !/^\d+$/.test(t));
-  if (content.length > 0 && content.filter((t) => inStems.has(stem(t))).length / content.length < 0.92) return false;
+  if (content.length > 0 && content.filter(known).length / content.length < 0.92) return false;
   if (outTok.filter((t) => /^\d+$/.test(t)).some((n) => !inAll.has(n))) return false;
   const ratio = outTok.length / Math.max(1, inTok.length);
   return ratio >= 0.4 && ratio <= 1.15;
+}
+
+// una card con un solo dato (es. solo "domani") non serve: ne servono almeno due tra quando, dove, con chi, per quanti
+export function usefulEvent(e: { when: string | null; where: string | null; who: string | null; party: string | null }): boolean {
+  return [e.when, e.where, e.who, e.party].filter(Boolean).length >= 2;
 }

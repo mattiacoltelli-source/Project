@@ -1,7 +1,7 @@
 // VoiceBrief: audio -> testo (STT OpenAI) -> riassunto (LLM OpenAI).
 // Segreto (Supabase secrets): OPENAI_API_KEY. Nessun contenuto viene salvato o loggato.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
+import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, usefulEvent, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
 
 const ORIGIN = "https://mattiacoltelli-source.github.io";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -235,7 +235,7 @@ Deno.serve(async (req) => {
           const ambiguous = raw?.kind === "booking" && !booking;
           const needsWhen = booking && !e.when;
           const dup = events.some((x) => x.what === e.what && x.when === e.when && x.where === e.where);
-          if (!ambiguous && !needsWhen && !isPastRef(e.when) && (e.when || e.where) && !dup) events.push(e);
+          if (!ambiguous && !needsWhen && !isPastRef(e.when) && usefulEvent(e) && !dup) events.push(e);
         }
       } catch { /* nessun evento */ }
       return done(200, `ok_n${events.length}` + (dropped ? `_dropped${dropped}` : ""), { events, event: events[0] ?? null });
@@ -246,6 +246,10 @@ Deno.serve(async (req) => {
     bytes = text.length;
     if (!Object.hasOwn(MODES, mode)) return done(400, "bad_mode", { error: "bad_mode", message: "Modalità non valida." });
     if (!text.trim() || text.length > MAX_TEXT_CHARS) return done(400, "bad_text", { error: "bad_text", message: "Testo non valido." });
+    // vocale cortissimo: riassumerlo non serve (e costa), si mostra il testo com'è
+    if (mode === "bullets" && text.trim().split(/\s+/).length < 15) {
+      return done(200, "ok_short", { result: text.trim(), notice: "Vocale molto breve: non serve riassumerlo, ecco il testo." });
+    }
     const rewrite = mode === "clean" || mode === "translate"; // l'output è lungo quanto il testo
     const inTok = text.length / 2.5 + 200, outTok = rewrite ? Math.min(6000, text.length / 2.5 + 100) : Math.min(1500, text.length / 3 + 100);
     if (!(await reserve(inTok * LLM_IN_MICRO_PER_TOKEN + outTok * LLM_OUT_MICRO_PER_TOKEN)))
