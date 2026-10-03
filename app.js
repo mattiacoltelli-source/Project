@@ -1,5 +1,17 @@
 const $ = (id) => document.getElementById(id);
+const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_SECONDS = 10 * 60;
+const TITLES = { full: 'Trascrizione completa', bullets: 'Riassunto per punti', short: 'Riassunto sintetico', todo: 'Cose da fare' };
+const safeLS = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignora */ } },
+};
+
+let entry = null;        // file ricevuto (da IndexedDB)
+let duration = null;     // secondi, dai metadati del player
+let transcript = null;   // solo in memoria: cambiare modalità non richiama l'STT
 let objectUrl = null;
+let busy = false;
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -9,7 +21,6 @@ function openDb() {
     req.onerror = () => reject(req.error);
   });
 }
-
 async function idb(mode, fn) {
   const db = await openDb();
   try {
@@ -19,67 +30,150 @@ async function idb(mode, fn) {
       tx.oncomplete = () => resolve(req && req.result);
       tx.onerror = () => reject(tx.error);
     });
+  } finally { db.close(); }
+}
+
+const fmtSize = (n) => (n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB' : (n / 1024 / 1024).toFixed(2) + ' MB');
+const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+const setStatus = (msg, isErr) => { $('status').textContent = msg || ''; $('status').className = isErr ? 'err' : 'muted'; };
+const show = (id, on) => { $(id).hidden = !on; };
+
+function showView(view) { // 'idle' | 'pick' | 'result'
+  show('pick', view === 'pick');
+  show('result', view === 'result');
+}
+
+async function load() {
+  const shared = new URLSearchParams(location.search).get('shared');
+  try { entry = await idb('readonly', (s) => s.get('latest')); } catch (e) { setStatus('Errore IndexedDB: ' + e, true); return; }
+  if (shared) history.replaceState(null, '', location.pathname);
+  if (shared === 'nofile') setStatus('Condivisione ricevuta ma senza file audio.', true);
+  if (shared === 'error') setStatus('Errore nel leggere il file condiviso.', true);
+
+  if (!entry) {
+    showView('idle');
+    if (!shared) setStatus('In attesa di un vocale. In WhatsApp: tieni premuto il vocale → Condividi → VoiceBrief.');
+    return;
+  }
+  transcript = null;
+  duration = null;
+  $('f-name').textContent = entry.name || '(vuoto)';
+  $('f-type').textContent = entry.type || '(vuoto)';
+  $('f-size').textContent = fmtSize(entry.size);
+  $('f-dur').textContent = '…';
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(entry.blob);
+  const p = $('player');
+  p.onloadedmetadata = () => {
+    if (isFinite(p.duration)) { duration = p.duration; $('f-dur').textContent = fmtDur(duration); }
+  };
+  p.onerror = () => { $('f-dur').textContent = 'non leggibile'; };
+  p.src = objectUrl;
+  const last = safeLS.get('vb_mode') || 'bullets';
+  const r = document.querySelector(`input[name=mode][value=${TITLES[last] ? last : 'bullets'}]`);
+  r.checked = true;
+  showView('pick');
+  setStatus(shared === 'ok' ? 'Vocale ricevuto.' : '');
+}
+
+// --- rete ---
+class ApiError extends Error { constructor(code, message) { super(message); this.code = code; } }
+
+async function api(init) {
+  if (!navigator.onLine) throw new ApiError('offline', 'Nessuna connessione. L’audio resta salvato: riprova appena torni online.');
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 120000);
+  let res;
+  try {
+    res = await fetch(self.VB.API_URL, { ...init, signal: ctl.signal, headers: { ...(init.headers || {}), 'x-vb-token': safeLS.get('vb_token') || '' } });
+  } catch {
+    throw new ApiError('offline', 'Connessione assente o instabile. L’audio resta salvato: riprova.');
+  } finally { clearTimeout(timer); }
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { safeLS.set('vb_token', ''); show('token-box', true); throw new ApiError('auth', 'Codice di accesso non valido.'); }
+  if (!res.ok) throw new ApiError(data.error || 'server', data.message || 'Errore del servizio. Riprova tra poco.');
+  return data;
+}
+
+function normalizedFile() {
+  const ogg = /\.(opus|ogg|oga)$/i.test(entry.name || '') || /ogg|opus/i.test(entry.type || '');
+  if (ogg) return new File([entry.blob], 'audio.ogg', { type: 'audio/ogg' });
+  return new File([entry.blob], entry.name || 'audio', { type: (entry.type || '').split(';')[0] });
+}
+
+async function getTranscript() {
+  if (transcript !== null) return transcript;
+  if (entry.size > MAX_BYTES) throw new ApiError('too_big', 'Audio oltre 10 MB.');
+  if (duration && duration > MAX_SECONDS) throw new ApiError('too_long', 'Audio oltre 10 minuti.');
+  const fd = new FormData();
+  fd.append('audio', normalizedFile());
+  const data = await api({ method: 'POST', body: fd });
+  if (!data.text) throw new ApiError('empty', 'Nessun parlato riconosciuto nell’audio.');
+  transcript = data.text;
+  return transcript;
+}
+
+async function run() {
+  if (busy) return;
+  const mode = document.querySelector('input[name=mode]:checked').value;
+  safeLS.set('vb_mode', mode);
+  busy = true;
+  $('go').disabled = true;
+  setStatus('Elaboro…');
+  try {
+    const text = await getTranscript();
+    const out = mode === 'full' ? text : (await api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text }) })).result;
+    $('result-title').textContent = TITLES[mode];
+    $('out').textContent = out || '(risultato vuoto)';
+    show('share', !!navigator.share);
+    showView('result');
+    setStatus('');
+  } catch (e) {
+    setStatus(e instanceof ApiError ? e.message : 'Errore imprevisto.', true);
+    $('go').textContent = e.code === 'offline' ? 'Riprova' : 'Elabora';
   } finally {
-    db.close();
+    busy = false;
+    $('go').disabled = false;
   }
 }
 
-const fmtSize = (n) => (n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB' : (n / 1024 / 1024).toFixed(2) + ' MB') + ' (' + n + ' byte)';
-
-async function render() {
-  const params = new URLSearchParams(location.search);
-  const shared = params.get('shared');
-  let entry = null;
-  try { entry = await idb('readonly', (s) => s.get('latest')); } catch (e) { $('status').textContent = 'Errore IndexedDB: ' + e; return; }
-
-  if (shared === 'nofile') $('status').textContent = 'Condivisione ricevuta ma senza file audio.';
-  else if (shared === 'error') $('status').textContent = 'Errore nel leggere il file condiviso.';
-  else if (entry) $('status').textContent = shared === 'ok' ? 'File ricevuto dalla condivisione.' : 'Ultimo file salvato.';
-
-  $('file').hidden = !entry;
-  if (!entry) return;
-  const name = entry.name || '(vuoto)';
-  const dot = name.lastIndexOf('.');
-  $('f-name').textContent = name;
-  $('f-type').textContent = entry.type || '(vuoto)';
-  $('f-ext').textContent = dot >= 0 ? name.slice(dot) : '(nessuna)';
-  $('f-size').textContent = fmtSize(entry.size);
-  $('f-time').textContent = new Date(entry.receivedAt).toLocaleString('it-IT');
-  if (objectUrl) URL.revokeObjectURL(objectUrl);
-  objectUrl = URL.createObjectURL(entry.blob);
-  $('player').src = objectUrl;
-  $('play-err').hidden = true;
-  $('player').onerror = () => {
-    $('play-err').textContent = 'Il browser non riesce a riprodurre il file.';
-    $('play-err').hidden = false;
-  };
-  if (shared) history.replaceState(null, '', location.pathname);
-}
-
+// --- eventi ---
+$('go').onclick = run;
+$('again').onclick = () => { $('go').textContent = 'Elabora'; showView('pick'); };
+$('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('out').textContent); setStatus('Copiato.'); } catch { setStatus('Copia non riuscita.', true); }
+};
+$('share').onclick = async () => {
+  try { await navigator.share({ text: $('out').textContent }); } catch { /* annullato */ }
+};
 $('clear').onclick = async () => {
   await idb('readwrite', (s) => s.delete('latest'));
+  entry = null; transcript = null;
   $('player').removeAttribute('src');
-  $('status').textContent = 'File eliminato. In attesa di un vocale.';
-  $('file').hidden = true;
+  showView('idle');
+  setStatus('Audio eliminato. In attesa di un vocale.');
+};
+$('token-save').onclick = () => {
+  const v = $('token').value.trim();
+  if (!v) return;
+  safeLS.set('vb_token', v);
+  $('token').value = '';
+  show('token-box', false);
+  setStatus('Codice salvato.');
 };
 
 $('env').textContent =
-  (matchMedia('(display-mode: standalone)').matches ? 'Installata (standalone)' : 'Browser (non installata)') + ' · v1';
+  (matchMedia('(display-mode: standalone)').matches ? 'Installata' : 'Browser') + ' · v' + self.VB.VERSION;
+show('token-box', !safeLS.get('vb_token'));
 
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js').then((reg) => {
     reg.update().catch(() => {});
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) { reg.update().catch(() => {}); render(); }
-    });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
   });
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (hadController) $('update').hidden = false;
-  });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) show('update', true); });
   $('reload').onclick = () => location.reload();
-} else {
-  $('status').textContent = 'Service worker non supportato: Share Target non disponibile.';
 }
 
-render();
+load();

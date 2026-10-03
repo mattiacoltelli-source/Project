@@ -10,24 +10,52 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="update" class="banner" hidden>Nuova versione. <button id="reload">Ricarica</button></div>
+  <div id="update" class="banner" hidden>Nuova versione disponibile. <button id="reload">Ricarica</button></div>
   <main>
     <h1>VoiceBrief</h1>
-    <p id="status" class="muted">In attesa di un vocale. Da WhatsApp: tieni premuto il vocale → Condividi → VoiceBrief.</p>
-    <section id="file" hidden>
-      <dl>
-        <dt>Nome</dt><dd id="f-name"></dd>
-        <dt>MIME</dt><dd id="f-type"></dd>
-        <dt>Estensione</dt><dd id="f-ext"></dd>
-        <dt>Dimensione</dt><dd id="f-size"></dd>
-        <dt>Ricevuto</dt><dd id="f-time"></dd>
-      </dl>
-      <audio id="player" controls></audio>
-      <p id="play-err" class="err" hidden></p>
-      <button id="clear">Elimina</button>
+    <p id="status" class="muted"></p>
+
+    <section id="token-box" hidden>
+      <label for="token">Codice di accesso</label>
+      <input id="token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button id="token-save">Salva</button>
     </section>
+
+    <section id="pick" hidden>
+      <h2>Come vuoi elaborare questo vocale?</h2>
+      <div id="modes" role="radiogroup">
+        <label class="mode"><input type="radio" name="mode" value="full"><span><b>Trascrizione completa</b><small>Testo integrale e leggibile</small></span></label>
+        <label class="mode"><input type="radio" name="mode" value="bullets"><span><b>Riassunto per punti</b><small>Bullet chiari</small></span></label>
+        <label class="mode"><input type="radio" name="mode" value="short"><span><b>Riassunto sintetico</b><small>Il minimo indispensabile</small></span></label>
+        <label class="mode"><input type="radio" name="mode" value="todo"><span><b>Cose da fare</b><small>Azioni, decisioni, scadenze, appuntamenti</small></span></label>
+      </div>
+      <button id="go" class="primary">Elabora</button>
+      <audio id="player" controls></audio>
+      <details>
+        <summary>Dettagli file</summary>
+        <dl>
+          <dt>Nome</dt><dd id="f-name"></dd>
+          <dt>MIME</dt><dd id="f-type"></dd>
+          <dt>Dimensione</dt><dd id="f-size"></dd>
+          <dt>Durata</dt><dd id="f-dur"></dd>
+        </dl>
+      </details>
+      <button id="clear" class="link">Elimina audio</button>
+    </section>
+
+    <section id="result" hidden>
+      <h2 id="result-title"></h2>
+      <pre id="out"></pre>
+      <div class="row">
+        <button id="copy" class="primary">Copia</button>
+        <button id="share">Condividi</button>
+      </div>
+      <button id="again" class="link">Cambia modalità</button>
+    </section>
+
     <p class="muted small" id="env"></p>
   </main>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
