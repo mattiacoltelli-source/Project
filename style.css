@@ -47,6 +47,28 @@ h1 { margin: 28px 0 0; font-size: 26px; line-height: 1.2; font-weight: 800; lett
 .steps li + li { border-top: 1px solid var(--line); }
 .steps .n { width: 28px; height: 28px; flex: none; border-radius: 50%; background: var(--brand); color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 
+.working { align-items: center; justify-content: center; text-align: center; padding-bottom: 48px; }
+.working h1 { margin-top: 28px; }
+.wave { height: 72px; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.wave i { width: 7px; height: 56px; border-radius: 4px; background: var(--brand); transform: scaleY(.3); animation: wave 1s ease-in-out infinite alternate; will-change: transform; }
+.wave i:nth-child(1) { animation-delay: -.9s; } .wave i:nth-child(2) { animation-delay: -.6s; } .wave i:nth-child(3) { animation-delay: -.3s; }
+.wave i:nth-child(4) { animation-delay: 0s; } .wave i:nth-child(5) { animation-delay: -.45s; } .wave i:nth-child(6) { animation-delay: -.75s; } .wave i:nth-child(7) { animation-delay: -.15s; }
+@keyframes wave { to { transform: scaleY(1); } }
+.wsteps { list-style: none; margin: 28px 0 8px; padding: 6px 16px; width: 100%; border-radius: 20px; background: var(--soft); text-align: left; }
+.wsteps li { display: flex; align-items: center; gap: 14px; min-height: 56px; font-size: 16px; font-weight: 500; color: #6d8480; transition: color .2s; }
+.wsteps li + li { border-top: 1px solid var(--line); }
+.wsteps li[data-state=active], .wsteps li[data-state=done] { color: var(--ink); }
+.wsteps li[data-state=active] { font-weight: 700; }
+.wsteps li[hidden] { display: none; }
+.wi { width: 24px; height: 24px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; }
+.wi i, .wi svg { display: none; }
+li[data-state=pending] .w-pend { display: block; width: 18px; height: 18px; border: 2px solid #c3d3d0; border-radius: 50%; }
+li[data-state=active] .w-act { display: block; width: 20px; height: 20px; border: 3px solid #cfe5e1; border-top-color: var(--brand); border-radius: 50%; animation: spin .8s linear infinite; }
+li[data-state=done] .wi { background: var(--brand); }
+li[data-state=done] .w-done { display: block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .wave i { animation: none; transform: scaleY(.6); } .w-act { animation-duration: 2.4s !important; } }
+
 .modes { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
 .mode { position: relative; display: flex; align-items: center; gap: 14px; min-height: 76px; padding: 14px 16px; border: 2px solid var(--line); border-radius: 18px; background: #fff; }
 .mode input { position: absolute; opacity: 0; width: 1px; height: 1px; }
