@@ -18,19 +18,17 @@ const LLM_OUT_MICRO_PER_TOKEN = 0.6 * 1.3;
 
 const MODES: Record<string, string> = {
   bullets: "", // costruito da bulletsPrompt (dipende dalla durata)
-  short:
-    "Riassumi il testo nel minimo indispensabile: 1-3 frasi, nella stessa lingua del testo. Solo il riassunto.",
   clean:
-    "Riscrivi il testo come messaggio pulito, pronto da inviare: togli esitazioni (ehm, cioè, tipo, allora…), ripetizioni e false partenze, correggi punteggiatura e maiuscole, vai a capo tra argomenti diversi. " +
+    "Riscrivi il testo, NELLA SUA STESSA LINGUA (non tradurlo), come messaggio pulito, pronto da inviare: togli esitazioni (ehm, cioè, tipo, allora…), ripetizioni e false partenze, correggi punteggiatura e maiuscole, vai a capo tra argomenti diversi. " +
     "NON riassumere, NON aggiungere e NON cambiare nulla: mantieni la prima persona, il tono e tutte le informazioni (nomi, numeri, orari, luoghi). Se un passaggio non è chiaro, lascialo com'è. Solo il testo riscritto.",
   translate:
-    "Traduci fedelmente il testo: se è in italiano traducilo in inglese, altrimenti traducilo in italiano. " +
+    "Traduci fedelmente il testo in italiano; se è già in italiano restituiscilo invariato. " +
     "Non aggiungere, togliere o riassumere nulla; mantieni nomi propri, numeri, orari e tono; mantieni la prima persona. Solo la traduzione.",
 };
 const bulletsPrompt = (max: number) =>
-  `Riassumi il testo in punti elenco BREVI (una riga ciascuno, una sola idea), nella stessa lingua del testo. ` +
+  `Riassumi il testo in punti elenco BREVI (una riga ciascuno, una sola idea), SEMPRE IN ITALIANO anche se il testo è in un'altra lingua. ` +
   `Al massimo ${max} punti: se servono di più, unisci le idee molto vicine. ` +
-  `Se dal vocale si capisce con certezza di cosa o di chi si parla (il tema è detto o evidente), apri con una riga "In breve: <una sola frase>"; ` +
+  `Se dal vocale si capisce con certezza di cosa o di chi si parla (il tema è detto o evidente), apri con una riga "In breve: <una sola frase in italiano>"; ` +
   `se il contesto non è esplicito o il vocale parte a metà discorso, NON scrivere quella riga. Non inventare né dedurre il contesto. ` +
   `Poi i punti, ognuno su una riga che inizia con "- ". Nessun'altra introduzione.`;
 const EVENT_PROMPT =
