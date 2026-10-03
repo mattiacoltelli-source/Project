@@ -19,8 +19,9 @@ const LLM_OUT_MICRO_PER_TOKEN = 0.6 * 1.3;
 const MODES: Record<string, string> = {
   bullets: "", // costruito da bulletsPrompt (dipende dalla durata)
   clean:
-    "Riscrivi il testo, NELLA SUA STESSA LINGUA (non tradurlo), come messaggio pulito, pronto da inviare: togli esitazioni (ehm, cioè, tipo, allora…), ripetizioni e false partenze, correggi punteggiatura e maiuscole, vai a capo tra argomenti diversi. " +
-    "NON riassumere, NON aggiungere e NON cambiare nulla: mantieni la prima persona, il tono e tutte le informazioni (nomi, numeri, orari, luoghi). Se un passaggio non è chiaro, lascialo com'è. Solo il testo riscritto.",
+    "Task: rewrite the text as a clean message ready to send, IN THE SAME LANGUAGE AS THE TEXT (English text -> English output, Italian text -> Italian output; never translate). " +
+    "Remove fillers and hesitations (um, uh, like, you know, ehm, cioè, tipo, allora...), repetitions and false starts; fix punctuation and capitalization; start a new line between different topics. " +
+    "Do NOT summarize, add or change anything: keep the first person, the tone and all information (names, numbers, times, places). If a passage is unclear, leave it as is. Output only the rewritten text.",
   translate:
     "Traduci fedelmente il testo in italiano; se è già in italiano restituiscilo invariato. " +
     "Non aggiungere, togliere o riassumere nulla; mantieni nomi propri, numeri, orari e tono; mantieni la prima persona. Solo la traduzione.",
