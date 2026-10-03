@@ -1,7 +1,7 @@
 // VoiceBrief: audio -> testo (STT OpenAI) -> riassunto (LLM OpenAI).
 // Segreto (Supabase secrets): OPENAI_API_KEY. Nessun contenuto viene salvato o loggato.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
+import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
 
 const ORIGIN = "https://mattiacoltelli-source.github.io";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -223,10 +223,11 @@ Deno.serve(async (req) => {
           const what = keep(clean(raw?.what));
           const e: Ev = {
             kind: booking ? "booking" : "appointment",
-            what: isGenericWhat(what) ? null : what,
+            what: what,
             when: keep(clean(raw?.when)), where: keep(clean(raw?.where)), who: keep(clean(raw?.who)),
             party: booking ? keep(clean(raw?.party)) : null,
           };
+          if (isGenericWhat(e.what) || sameAsWhere(e.what, e.where)) e.what = null;
           const proposed = [raw?.what, raw?.when, raw?.where, raw?.who, raw?.party].filter((v) => clean(v)).length;
           dropped += proposed - [e.what, e.when, e.where, e.who, e.party].filter(Boolean).length;
           // due letture possibili => niente card: il modello dice "prenotazione" ma il testo non lo prova;
