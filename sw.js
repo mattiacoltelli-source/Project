@@ -37,7 +37,12 @@ async function handleShare(request) {
 }
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // 'reload' salta la cache HTTP del browser: la nuova versione salva file freschi, mai quelli vecchi
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => Promise.all(SHELL.map((u) => fetch(new Request(u, { cache: 'reload' })).then((r) => (r.ok ? c.put(u, r) : null)))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -56,9 +61,9 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   if (req.method !== 'GET' || url.origin !== location.origin) return;
-  // network-first con fallback cache (HTML e asset): niente versioni vecchie bloccate
+  // network-first con fallback cache; 'no-cache' = riconvalida sempre col server (niente file vecchi dalla cache HTTP di 10 min)
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();

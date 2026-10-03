@@ -306,12 +306,33 @@ $('env').textContent =
 
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.register('sw.js').then((reg) => {
+  let updateReady = false;
+  // niente cache HTTP per sw.js e per i file importati: gli aggiornamenti si vedono subito
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
     reg.update().catch(() => {});
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { reg.update().catch(() => {}); checkVersion(); } });
   });
-  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) show('update', true); });
-  $('reload').onclick = () => location.reload();
+  navigator.serviceWorker.addEventListener('controllerchange', () => { updateReady = true; if (hadController) checkVersion(); });
+  // controllo diretto della versione pubblicata: non dipende dal ciclo di vita del service worker
+  async function checkVersion() {
+    try {
+      const t = await (await fetch('config.js', { cache: 'no-store' })).text();
+      const m = /VERSION:\s*'([^']+)'/.exec(t);
+      if (m && m[1] !== self.VB.VERSION) show('update', true);
+    } catch { /* offline: riprova alla prossima apertura */ }
+  }
+  checkVersion();
+  $('reload').onclick = async () => {
+    $('reload').disabled = true;
+    if (!updateReady) {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) await reg.update();
+        await new Promise((res) => { navigator.serviceWorker.addEventListener('controllerchange', res, { once: true }); setTimeout(res, 3000); });
+      } catch { /* ricarico comunque */ }
+    }
+    location.reload();
+  };
 }
 
 load();
