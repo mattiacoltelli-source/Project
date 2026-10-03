@@ -54,6 +54,9 @@ h1 { margin: 28px 0 0; font-size: 26px; line-height: 1.2; font-weight: 800; lett
 .wave i:nth-child(1) { animation-delay: -.9s; } .wave i:nth-child(2) { animation-delay: -.6s; } .wave i:nth-child(3) { animation-delay: -.3s; }
 .wave i:nth-child(4) { animation-delay: 0s; } .wave i:nth-child(5) { animation-delay: -.45s; } .wave i:nth-child(6) { animation-delay: -.75s; } .wave i:nth-child(7) { animation-delay: -.15s; }
 @keyframes wave { to { transform: scaleY(1); } }
+.rec-time { margin-top: 20px; font-size: 44px; font-weight: 800; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.rec-btn { margin-top: 24px; max-width: 320px; }
+#recording .lead { margin-top: 4px; }
 .wsteps { list-style: none; margin: 28px 0 8px; padding: 6px 16px; width: 100%; border-radius: 20px; background: var(--soft); text-align: left; }
 .wsteps li { display: flex; align-items: center; gap: 14px; min-height: 56px; font-size: 16px; font-weight: 500; color: #6d8480; transition: color .2s; }
 .wsteps li + li { border-top: 1px solid var(--line); }

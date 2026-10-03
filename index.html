@@ -27,11 +27,26 @@
       </div>
       <h1>Nessun vocale</h1>
       <p class="lead">Condividi un vocale di WhatsApp con VoiceBrief.</p>
+      <button id="rec-start" class="primary rec-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+        Registra un vocale
+      </button>
       <ol class="steps">
         <li><span class="n">1</span><span>Tieni premuto il vocale</span></li>
         <li><span class="n">2</span><span>Tocca <b>Condividi</b></span></li>
         <li><span class="n">3</span><span>Scegli <b>VoiceBrief</b></span></li>
       </ol>
+    </section>
+
+    <section id="recording" class="screen working" hidden>
+      <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div id="rec-time" class="rec-time" role="timer">0:00</div>
+      <p class="lead">Sto registrando: parla pure.<br>Tieni l'app aperta e lo schermo acceso.</p>
+      <button id="rec-stop" class="primary rec-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>
+        Fine
+      </button>
+      <button id="rec-cancel" class="link">Annulla</button>
     </section>
 
     <section id="working" class="screen working" hidden>
@@ -86,6 +101,7 @@
         </label>
       </div>
       <button id="clear" class="link">Elimina audio</button>
+      <button id="rec-again" class="link">Registra un altro vocale</button>
       <div class="cta"><button id="go" class="primary">Elabora</button></div>
     </section>
 
