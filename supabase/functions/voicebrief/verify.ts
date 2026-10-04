@@ -16,8 +16,26 @@ const STOP = new Set([
   "per", "su", "sul", "ore", "ora",
 ]);
 
+// numeri italiani composti ("venticinque", "trentuno", "cento", "duemila") -> cifre, così "duemila" e "2000" coincidono
+const UNITS: Record<string, number> = { uno: 1, un: 1, due: 2, tre: 3, quattro: 4, cinque: 5, sei: 6, sette: 7, otto: 8, nove: 9 };
+const TENS: Record<string, number> = { venti: 20, trenta: 30, quaranta: 40, cinquanta: 50, sessanta: 60, settanta: 70, ottanta: 80, novanta: 90 };
+function itNumber(w: string): string | null {
+  if (w === "cento") return "100";
+  if (w === "mille") return "1000";
+  const th = /^(due|tre|quattro|cinque|sei|sette|otto|nove|dieci)mila$/.exec(w);
+  if (th) return String((th[1] === "dieci" ? 10 : UNITS[th[1]]) * 1000);
+  for (const [t, v] of Object.entries(TENS)) {
+    if (w === t) return String(v);
+    const stem = t.slice(0, -1); // "venti" -> "vent" (ventuno, ventotto) oppure "venti"+unit (ventidue)
+    for (const [u, n] of Object.entries(UNITS)) {
+      if (w === t + u || ((u === "uno" || u === "otto") && w === stem + u)) return String(v + n);
+    }
+  }
+  return null;
+}
+
 export function tokens(s: string): string[] {
-  return s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").split(/[^a-z0-9]+/).filter(Boolean).map((t) => NUM[t] ?? t);
+  return s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").split(/[^a-z0-9]+/).filter(Boolean).map((t) => NUM[t] ?? itNumber(t) ?? t);
 }
 
 export function supported(value: string | null, textTokens: Set<string>): boolean {
@@ -112,4 +130,55 @@ export function cleanFaithful(out: string, text: string): boolean {
 // una card con un solo dato (es. solo "domani") non serve: ne servono almeno due tra quando, dove, con chi, per quanti
 export function usefulEvent(e: { when: string | null; where: string | null; who: string | null; party: string | null }): boolean {
   return [e.when, e.where, e.who, e.party].filter(Boolean).length >= 2;
+}
+
+// --- "Riassunto" in prosa ---
+// il testo è italiano? (parole funzione molto frequenti): serve a sapere se ha senso confrontare le radici delle parole
+const IT_WORDS = new Set(["il", "lo", "la", "le", "gli", "un", "una", "di", "che", "e", "non", "per", "con", "su", "ma", "mi", "ti", "ci", "si", "sono", "ho", "hai", "ha", "è", "alle", "del", "della", "dei", "come", "anche", "più", "se", "da", "in", "al"]);
+export function isItalianText(text: string): boolean {
+  const toks = text.toLowerCase().split(/[^a-zà-ù]+/).filter(Boolean);
+  if (toks.length < 5) return false;
+  return toks.filter((t) => IT_WORDS.has(t)).length / toks.length >= 0.25;
+}
+
+// Il riassunto non deve contenere numeri, nomi propri o troppe parole importanti assenti dal vocale.
+// Numeri e nomi propri si controllano sempre; la sovrapposizione delle parole solo se l'audio è italiano come il riassunto
+// (altrimenti è una traduzione). Un riassunto riformula, quindi la soglia è bassa: serve a prendere le invenzioni evidenti.
+export function summaryFaithful(out: string, text: string): boolean {
+  const outTok = tokens(out);
+  if (outTok.length === 0) return false;
+  const inTok = tokens(text);
+  const inAll = new Set(inTok);
+  // i numeri si confrontano senza gli articoli "un/uno/una" (che sarebbero "1")
+  const noArt = (x: string) => x.replace(/\b(un|uno|una|one)\b/gi, " ");
+  const inNums = new Set(tokens(noArt(text)));
+  if (tokens(noArt(out)).filter((t) => /^\d+$/.test(t)).some((n) => !inNums.has(n))) return false;
+  // nomi propri (maiuscola a metà frase) che nel vocale non ci sono
+  for (const sentence of out.split(/(?<=[.!?])\s+/)) {
+    const words = sentence.split(/\s+/).slice(1);
+    for (const w of words) {
+      const m = /^[("'«]*([A-ZÀ-Ù][a-zà-ù]{2,})/.exec(w);
+      if (m && !inAll.has(tokens(m[1])[0])) return false;
+    }
+  }
+  if (!isItalianText(text)) return true;
+  const stem = (t: string) => t.slice(0, 4); // radici corte: il riassunto riformula i verbi (vieni -> viene)
+  const inStems = new Set(inTok.map(stem));
+  const joined = new Set(inTok.slice(1).map((t, i) => stem(inTok[i] + t)));
+  const content = outTok.filter((t) => t.length >= 4 && !STOP.has(t) && !/^\d+$/.test(t) && !SUMMARY_FILLER.has(t));
+  if (content.length === 0) return true;
+  return content.filter((t) => inStems.has(stem(t)) || joined.has(stem(t))).length / content.length >= 0.55;
+}
+
+// frasi che dichiarano ciò che manca ("Non ci sono richieste specifiche"): non informano, si tolgono
+export function dropEmptyClaims(out: string): string {
+  const kept = out.split(/(?<=[.!?])\s+/).filter((s) => !/\b(non ci sono|non vi sono|nessuna|nessun)\b.*\b(richiest|domand|azion|impegn|appuntament|scadenz|indicazion)/i.test(s));
+  return kept.join(" ").trim();
+}
+// parole di raccordo del riassunto ("chi parla", "propone", "chiede"...) che non devono essere nel vocale
+const SUMMARY_FILLER = new Set(["parla", "chiede", "propone", "dice", "racconta", "spiega", "invita", "domanda", "avvisa", "ricorda", "vuole", "vorrebbe", "chiedere", "aspetta", "comunica", "informa", "annuncia", "ringrazia", "saluta", "anche", "inoltre", "quindi", "infine", "poi"]);
+
+// massimo di frasi: circa una ogni 12 secondi, tra 2 e 7
+export function maxSentencesFor(seconds: number): number {
+  return Math.min(7, Math.max(2, Math.round(seconds / 12)));
 }

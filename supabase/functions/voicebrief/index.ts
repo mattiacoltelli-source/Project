@@ -1,7 +1,7 @@
 // VoiceBrief: audio -> testo (STT OpenAI) -> riassunto (LLM OpenAI).
 // Segreto (Supabase secrets): OPENAI_API_KEY. Nessun contenuto viene salvato o loggato.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, usefulEvent, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
+import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, usefulEvent, summaryFaithful, dropEmptyClaims, maxSentencesFor, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
 
 const ORIGIN = "https://mattiacoltelli-source.github.io";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -18,6 +18,7 @@ const LLM_OUT_MICRO_PER_TOKEN = 0.6 * 1.3;
 
 const MODES: Record<string, string> = {
   bullets: "", // costruito da bulletsPrompt (dipende dalla durata)
+  summary: "", // costruito da summaryPrompt (dipende dalla durata)
   clean:
     "Task: rewrite the text as a clean message ready to send, IN THE SAME LANGUAGE AS THE TEXT (English text -> English output, Italian text -> Italian output; never translate). " +
     "Remove fillers and hesitations (um, uh, like, you know, ehm, cioè, tipo, allora...), repetitions and false starts; fix punctuation and capitalization; start a new line between different topics. " +
@@ -30,6 +31,14 @@ const MODES: Record<string, string> = {
 const TRANSLATE_EN =
   "Translate the text faithfully into English; if it is already in English, return it unchanged. " +
   "Do not add, remove or summarize anything; keep proper names, numbers, times and tone; keep the first person. Output only the translation.";
+const summaryPrompt = (max: number) =>
+  `Scrivi un riassunto in prosa, in italiano (anche se il testo è in un'altra lingua), scorrevole e naturale, come lo racconteresti a voce a un amico. ` +
+  `Scrivi al massimo ${max} frasi, brevi e chiare. ` +
+  `La prima frase dice subito il messaggio centrale: di cosa si tratta o cosa vuole chi parla. ` +
+  `Poi i dettagli che contano, solo se detti: chi, cosa, quando, dove, numeri e importi. ` +
+  `Se chi parla fa una domanda o chiede qualcosa a chi ascolta, dillo in modo chiaro nell'ultima frase. ` +
+  `Niente elenchi, niente titoli, niente introduzioni come "Il vocale dice". Non aggiungere commenti, opinioni o conclusioni tue, e non scrivere frasi su ciò che manca (es. \"non ci sono richieste\"). ` +
+  `Se il testo è confuso o parte a metà, riassumi solo ciò che è chiaro.`;
 const bulletsPrompt = (max: number) =>
   `Riassumi il testo in punti elenco BREVI (una riga ciascuno, una sola idea), SEMPRE IN ITALIANO anche se il testo è in un'altra lingua. ` +
   `Al massimo ${max} punti: se servono di più, unisci le idee molto vicine. ` +
@@ -251,7 +260,7 @@ Deno.serve(async (req) => {
     if (!Object.hasOwn(MODES, mode)) return done(400, "bad_mode", { error: "bad_mode", message: "Modalità non valida." });
     if (!text.trim() || text.length > MAX_TEXT_CHARS) return done(400, "bad_text", { error: "bad_text", message: "Testo non valido." });
     // vocale cortissimo: riassumerlo non serve (e costa), si mostra il testo com'è
-    if (mode === "bullets" && text.trim().split(/\s+/).length < 15) {
+    if ((mode === "bullets" || mode === "summary") && text.trim().split(/\s+/).length < 15) {
       return done(200, "ok_short", { result: text.trim(), notice: "Vocale molto breve: non serve riassumerlo, ecco il testo." });
     }
     const rewrite = mode === "clean" || mode === "translate"; // l'output è lungo quanto il testo
@@ -263,21 +272,27 @@ Deno.serve(async (req) => {
     const reqSecs = Number(body?.seconds);
     const secs = reqSecs > 0 && reqSecs <= 900 ? reqSecs : words / 2.5;
     const maxBullets = maxBulletsFor(secs);
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        model: LLM_MODEL,
-        temperature: rewrite ? 0.1 : 0.2,
-        max_tokens: rewrite ? Math.min(6000, Math.max(300, Math.ceil(words * 2.5))) : 1500,
-        messages: [
-          { role: "system", content: (rewrite ? SYSTEM_BASE : SYSTEM) + (mode === "bullets" ? bulletsPrompt(maxBullets) : mode === "translate" && body?.target === "en" ? TRANSLATE_EN : MODES[mode]) },
-          { role: "user", content: `<trascrizione>\n${text}\n</trascrizione>` },
-        ],
-      }),
-    });
-    if (!r.ok) return done(502, `llm_${r.status}`, { error: "provider", message: "Errore del servizio di riassunto." });
-    let out = String((await r.json()).choices?.[0]?.message?.content ?? "").trim();
+    const sysPrompt = (rewrite ? SYSTEM_BASE : SYSTEM) +
+      (mode === "bullets" ? bulletsPrompt(maxBullets) : mode === "summary" ? summaryPrompt(maxSentencesFor(secs)) : mode === "translate" && body?.target === "en" ? TRANSLATE_EN : MODES[mode]);
+    const ask = async (temperature: number, extra = ""): Promise<string | null> => {
+      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: LLM_MODEL,
+          temperature,
+          max_tokens: rewrite ? Math.min(6000, Math.max(300, Math.ceil(words * 2.5))) : 1500,
+          messages: [
+            { role: "system", content: sysPrompt + extra },
+            { role: "user", content: `<trascrizione>\n${text}\n</trascrizione>` },
+          ],
+        }),
+      });
+      if (!r.ok) return null;
+      return String((await r.json()).choices?.[0]?.message?.content ?? "").trim();
+    };
+    let out = await ask(rewrite ? 0.1 : 0.2);
+    if (out === null) return done(502, "llm_error", { error: "provider", message: "Errore del servizio di riassunto." });
     let outcome = "ok";
     if (mode === "bullets") {
       // "In breve" solo se il vocale è abbastanza lungo e la frase poggia su parole davvero dette; tetto rigido ai punti
@@ -287,6 +302,17 @@ Deno.serve(async (req) => {
       out = (keepBrief ? `In breve: ${brief}\n` : "") + capBullets(rest, maxBullets);
     }
     let notice: string | undefined;
+    if (mode === "summary") out = dropEmptyClaims(out) || out;
+    if (mode === "summary" && !summaryFaithful(out, text)) {
+      // il riassunto ha numeri o parole che nel vocale non ci sono: un solo ritentativo, più rigido
+      const again = (await reserve(inTok * LLM_IN_MICRO_PER_TOKEN + outTok * LLM_OUT_MICRO_PER_TOKEN)) ? await ask(0, " ATTENZIONE: usa solo parole, nomi e numeri presenti nel testo; non aggiungere nulla.") : null;
+      if (again && summaryFaithful(again, text)) { out = again; outcome = "ok_retry"; }
+      else {
+        out = text;
+        outcome = "ok_summaryfail";
+        notice = "Non riesco a riassumerlo in modo sicuro: ti mostro la trascrizione originale.";
+      }
+    }
     if (mode === "clean" && !cleanFaithful(out, text)) {
       // il testo riscritto aggiunge o cambia qualcosa (o è troppo corto): meglio la trascrizione originale
       out = text;

@@ -1,5 +1,5 @@
 // node --experimental-strip-types supabase/functions/voicebrief/verify.test.mjs
-import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere, usefulEvent } from "./verify.ts";
+import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere, usefulEvent, summaryFaithful, dropEmptyClaims, isItalianText, maxSentencesFor } from "./verify.ts";
 const T = (s) => new Set(tokens(s));
 const t1 = "Oh allora sabato ci vediamo alle 8, però prima devo passare da Marco a prendere la macchina, quindi magari facciamo direttamente davanti al ristorante da Gigi.";
 const cases = [
@@ -79,5 +79,20 @@ for (const [o, exp, why] of [
 for (const [a, b, exp] of [["McDonald's", "McDonald's", true], ["colazione", "bar Rossi", false], ["partita del Bologna", "stadio", false], [null, "bar", false]]) { const got = sameAsWhere(a, b); if (got !== exp) { bad++; console.log("FAIL sameAsWhere", a, b, got); } }
 for (const [e, exp] of [[{ when: "domani", where: null, who: null, party: null }, false], [{ when: "domani alle 20", where: null, who: "Ema", party: null }, true], [{ when: null, where: "bar", who: null, party: null }, false], [{ when: null, where: "bar", who: "Luca", party: null }, true]]) { const got = usefulEvent(e); if (got !== exp) { bad++; console.log("FAIL usefulEvent", JSON.stringify(e), got); } }
 { const got = cleanFaithful("Hi Marco, I cannot come tomorrow at seven.", "Um, hi Marco, I can not come tomorrow at 7, you know."); if (!got) { bad++; console.log("FAIL cleanFaithful cannot/seven"); } }
+const sIn = "Ciao, domani alle 18 ci vediamo da Luca. Ricordati di portare il vino, e dimmi se vieni anche con Anna.";
+for (const [o, exp, why] of [
+  ["Chi parla propone di vedersi domani alle 18 da Luca. Chiede di portare il vino e di confermare se viene anche Anna.", true, "fedele"],
+  ["Chi parla propone di vedersi domani alle 19 da Luca e chiede di portare il vino.", false, "ora cambiata"],
+  ["Chi parla propone di vedersi domani alle 18 da Luca, in pizzeria, e chiede di portare birra e dolci per la festa.", false, "dettagli inventati"],
+]) { const got = summaryFaithful(o, sIn); if (got !== exp) { bad++; console.log("FAIL summaryFaithful", why, got); } }
+if (!summaryFaithful("Chi parla propone di vedersi giovedì alle 8 davanti al caffè vicino alla stazione.", "Hi Marco, can we meet on Thursday at 8 in front of the cafe near the station instead? Thanks.")) { bad++; console.log("FAIL summaryFaithful inglese"); }
+if (summaryFaithful("Chi parla propone di vedersi alle 9 davanti al caffè.", "Hi Marco, can we meet on Thursday at 8 in front of the cafe near the station instead? Thanks.")) { bad++; console.log("FAIL summaryFaithful inglese numero"); }
+if (!isItalianText(sIn) || isItalianText("Hi Marco, can we meet on Thursday at 8 in front of the cafe near the station?")) { bad++; console.log("FAIL isItalianText"); }
+for (const [sec, exp] of [[10, 2], [60, 5], [180, 7], [600, 7]]) { if (maxSentencesFor(sec) !== exp) { bad++; console.log("FAIL maxSentencesFor", sec); } }
+for (const [w, exp] of [["duemila", "2000"], ["venticinque", "25"], ["trentuno", "31"], ["ventotto", "28"], ["cento", "100"], ["quarantadue", "42"], ["tremila", "3000"]]) { const got = tokens(w)[0]; if (got !== exp) { bad++; console.log("FAIL itNumber", w, got); } }
+{ const t4 = "Guarda ti volevo raccontare della serie che ho finito ieri sera, è davvero bella. Parla di un gruppo di amici che negli anni novanta apre un locale in riva al mare, e poi nel tempo succedono un sacco di cose, litigano, si perdono, si ritrovano. Gli attori sono bravissimi e la colonna sonora è fantastica. Sono dieci episodi da cinquanta minuti, la finisci in un weekend. Secondo me ti piacerebbe tantissimo, ti consiglio di guardarla.";
+  if (!summaryFaithful("Chi parla ha finito ieri sera una serie che trova bellissima. Racconta di un gruppo di amici che negli anni Novanta aprono un locale sul mare, tra litigi, separazioni e ritrovi. Il cast è molto bravo e la colonna sonora è fantastica. Sono dieci episodi da cinquanta minuti, e consiglia a chi ascolta di guardarla.", t4)) { bad++; console.log("FAIL summaryFaithful parafrasi"); }
+  if (summaryFaithful("Chi parla ha finito ieri sera una serie girata a Roma da Netflix. Sono dieci episodi da cinquanta minuti.", t4)) { bad++; console.log("FAIL summaryFaithful nome inventato"); } }
+if (dropEmptyClaims("Chi parla racconta una giornata tranquilla. Non ci sono richieste specifiche nel messaggio.") !== "Chi parla racconta una giornata tranquilla.") { bad++; console.log("FAIL dropEmptyClaims"); }
 console.log(bad ? `${bad} falliti` : "tutti ok");
 process.exit(bad ? 1 : 0);
