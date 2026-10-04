@@ -45,11 +45,29 @@ const summaryPrompt = (max: number) =>
 // modello più forte per il tono "pungente" (l'umorismo con il modello economico è scialbo); se non risponde si ripiega su quello normale
 const FUN_MODEL = Deno.env.get("OPENAI_FUN_MODEL") ?? "gpt-4o";
 const FUN_COST_X = 17; // gpt-4o costa circa 17 volte gpt-4o-mini
+const COMMENT_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "commented_summary",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["paragraphs"],
+      properties: {
+        paragraphs: {
+          type: "array",
+          items: { type: "object", additionalProperties: false, required: ["summary", "comment"], properties: { summary: { type: "string" }, comment: { type: "string" } } },
+        },
+      },
+    },
+  },
+};
 const commentPrompt = (max: number, tone: string) =>
   summaryPrompt(max) +
   ` (Il divieto di commenti e opinioni vale per il riassunto: i commenti vanno solo nelle righe di commento.) ` +
-  `Dividi il riassunto in 2-4 paragrafi brevi (1-3 frasi ciascuno), separati da una riga vuota. ` +
-  `Subito dopo un paragrafo puoi aggiungere UNA riga di commento che inizia con "> ", di una sola frase breve, in italiano; scrivine almeno una in totale, non serve per ogni paragrafo. ` +
+  `Rispondi in JSON: dividi il riassunto per argomento in 2-4 paragrafi brevi (1-3 frasi ciascuno; un solo paragrafo solo se il vocale parla di un unico argomento molto breve). ` +
+  `Per OGNI paragrafo il campo "comment" è un commento di una sola frase breve, in italiano, su proprio quel paragrafo: va sempre scritto, mai vuoto. ` +
   (tone === "sharp"
     ? `I commenti sono ironici e pungenti ma bonari: prendi in giro ciò che viene detto in quel paragrafo (le affermazioni, l'esagerazione, i giri di parole), MAI la persona o le sue caratteristiche. Niente insulti, volgarità, offese a gruppi o a categorie. Battute brevi e riconoscibili, senza spiegarle. `
     : `I commenti sono seri ed equilibrati: fai notare le ipotesi su cui poggia quel passaggio, cosa manca o cosa varrebbe la pena verificare. Su politica e temi controversi resta neutrale e non schierarti. Non dare consigli finanziari, legali o medici e non fare previsioni. `) +
@@ -309,6 +327,7 @@ Deno.serve(async (req) => {
           model,
           temperature,
           max_tokens: rewrite ? Math.min(6000, Math.max(300, Math.ceil(words * 2.5))) : 1500,
+          ...(mode === "comment" ? { response_format: COMMENT_FORMAT } : {}),
           messages: [
             { role: "system", content: sysPrompt + extra },
             { role: "user", content: `<trascrizione>\n${text}\n</trascrizione>` },
@@ -316,7 +335,13 @@ Deno.serve(async (req) => {
         }),
       });
       if (!r.ok) return null;
-      return String((await r.json()).choices?.[0]?.message?.content ?? "").trim();
+      const content = String((await r.json()).choices?.[0]?.message?.content ?? "").trim();
+      if (mode !== "comment") return content;
+      // JSON { paragraphs: [{ summary, comment }] } -> testo "paragrafo\n> commento" che parseIntegrated sa leggere
+      try {
+        const ps = JSON.parse(content).paragraphs;
+        return (Array.isArray(ps) ? ps : []).map((x: { summary?: unknown; comment?: unknown }) => `${String(x?.summary ?? "").trim()}\n> ${String(x?.comment ?? "").trim()}`).join("\n\n");
+      } catch { return content; }
     };
     const ask = async (temperature: number, extra = ""): Promise<string | null> => {
       if (useFun) {
@@ -348,7 +373,7 @@ Deno.serve(async (req) => {
       }
     }
     if (mode === "comment") {
-      // paragrafi di riassunto fedele, ciascuno con un commento che non introduce fatti nuovi; un solo ritentativo, poi niente commenti
+      // paragrafi di riassunto fedele, ciascuno con un commento che non introduce fatti nuovi; un solo ritentativo se mancano commenti
       const compose = (raw: string) => {
         const paras = parseIntegrated(raw).map((p) => ({ summary: dropEmptyClaims(p.summary) || p.summary, comment: p.comment }));
         const all = paras.map((p) => p.summary).join(" ");
@@ -356,9 +381,9 @@ Deno.serve(async (req) => {
         return { paras: kept, ok: !!all && summaryFaithful(all, text), asked: paras.filter((p) => p.comment).length, good: kept.filter((p) => p.comment).length };
       };
       let c = compose(out);
-      if (!c.ok || (c.asked > 0 && c.good === 0)) {
+      if (!c.ok || c.good < c.paras.length) {
         const again = (await reserve(cost)) ? await ask(0.3, " ATTENZIONE: nel riassunto usa solo parole, nomi e numeri presenti nel testo; nei commenti niente cifre, nomi o fatti che non sono nel testo, e niente insulti.") : null;
-        if (again) { const c2 = compose(again); if (c2.ok) { c = c2; outcome = "ok_retry"; } }
+        if (again) { const c2 = compose(again); if (c2.ok && (!c.ok || c2.good > c.good)) { c = c2; outcome = "ok_retry"; } }
       }
       if (!c.ok) {
         out = text;
