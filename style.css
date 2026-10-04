@@ -147,7 +147,5 @@ li[data-state=done] .w-done { display: block; }
 .tone { display: flex; gap: 8px; margin: 12px 0 0; }
 .tone button { flex: 1; min-height: 44px; border: 2px solid #e1eae8; border-radius: 14px; background: #fff; color: var(--deep); font: inherit; font-weight: 600; }
 .tone button[aria-pressed="true"] { background: #e8f5f3; border-color: var(--brand); }
-.comment { margin-top: 18px; padding-top: 14px; border-top: 2px solid #e1eae8; }
-.comment small { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: #4d6965; }
-.comment .item { font-size: 16px; }
-.comment .c-note { margin: 8px 0 0; font-size: 12px; color: #6d8480; }
+.c-line { margin: -6px 0 6px; padding: 4px 0 4px 12px; border-left: 3px solid var(--brand); font-style: italic; color: var(--deep); }
+.c-note { margin: 4px 0 0; font-size: 12px; color: #6d8480; }

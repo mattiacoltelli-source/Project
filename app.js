@@ -174,11 +174,18 @@ function renderResult(mode, text) {
   lastOutput = text;
   const box = $('out');
   box.textContent = '';
-  let lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-  const ci = lines.findIndex((l) => /^commento\s*:\s*$/i.test(l));
-  const comments = ci >= 0 ? lines.slice(ci + 1) : [];
-  if (ci >= 0) lines = lines.slice(0, ci);
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  let hasComment = false;
   for (const [i, l] of lines.entries()) {
+    const cm = /^💬\s*(.+)$/.exec(l);
+    if (cm) { // commento in coda al paragrafo: riga a parte, in corsivo e con una barra, così si capisce che è un'opinione
+      const el = document.createElement('div');
+      el.className = 'c-line';
+      el.textContent = '💬 ' + cm[1].replace(/\*\*/g, '');
+      box.appendChild(el);
+      hasComment = true;
+      continue;
+    }
     const b = i === 0 ? /^in breve\s*[:\-–]\s*(.+)$/i.exec(l) : null;
     if (b) { // riga "In breve" in cima, separata dai punti
       const el = document.createElement('div');
@@ -197,25 +204,11 @@ function renderResult(mode, text) {
     el.textContent = (m ? m[2] : l).replace(/\*\*/g, '');
     box.appendChild(el);
   }
-  if (comments.length) { // commento in un riquadro a parte: il riassunto sopra resta quello fedele
-    const wrap = document.createElement('div');
-    wrap.className = 'comment';
-    const lab = document.createElement('small');
-    lab.textContent = currentTone() === 'sharp' ? 'Commento pungente' : 'Commento';
-    wrap.appendChild(lab);
-    for (const c of comments) {
-      const el = document.createElement('div');
-      el.className = 'item';
-      el.textContent = c.replace(/^([-*•])\s+/, '').replace(/\*\*/g, '');
-      wrap.appendChild(el);
-    }
-    if (currentTone() !== 'sharp') {
-      const note = document.createElement('p');
-      note.className = 'c-note';
-      note.textContent = 'Opinione generata dall’AI: non è un consiglio finanziario, legale o medico.';
-      wrap.appendChild(note);
-    }
-    box.appendChild(wrap);
+  if (hasComment && currentTone() !== 'sharp') {
+    const note = document.createElement('p');
+    note.className = 'c-note';
+    note.textContent = 'I commenti sono opinioni generate dall’AI: non sono consigli finanziari, legali o medici.';
+    box.appendChild(note);
   }
   $('result-title').textContent = TITLES[mode];
 }

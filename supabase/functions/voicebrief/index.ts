@@ -1,7 +1,7 @@
 // VoiceBrief: audio -> testo (STT OpenAI) -> riassunto (LLM OpenAI).
 // Segreto (Supabase secrets): OPENAI_API_KEY. Nessun contenuto viene salvato o loggato.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, stripPlace, dropAddressee, usefulEvent, summaryFaithful, dropEmptyClaims, parseComment, safeComments, maxSentencesFor, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
+import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, stripPlace, dropAddressee, usefulEvent, summaryFaithful, dropEmptyClaims, parseIntegrated, isSafeComment, maxSentencesFor, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
 
 const ORIGIN = "https://mattiacoltelli-source.github.io";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -47,11 +47,13 @@ const FUN_MODEL = Deno.env.get("OPENAI_FUN_MODEL") ?? "gpt-4o";
 const FUN_COST_X = 17; // gpt-4o costa circa 17 volte gpt-4o-mini
 const commentPrompt = (max: number, tone: string) =>
   summaryPrompt(max) +
-  ` (Il divieto di commenti e opinioni vale per il riassunto: i commenti vanno solo nella sezione finale.) Dopo il riassunto lascia una riga vuota, poi scrivi la riga "Commento:" e subito sotto da 1 a 3 righe che iniziano con "- ", una frase ciascuna, in italiano. ` +
+  ` (Il divieto di commenti e opinioni vale per il riassunto: i commenti vanno solo nelle righe di commento.) ` +
+  `Dividi il riassunto in 2-4 paragrafi brevi (1-3 frasi ciascuno), separati da una riga vuota. ` +
+  `Subito dopo un paragrafo puoi aggiungere UNA riga di commento che inizia con "> ", di una sola frase breve, in italiano; scrivine almeno una in totale, non serve per ogni paragrafo. ` +
   (tone === "sharp"
-    ? `I commenti sono ironici e pungenti ma bonari: prendi in giro ciò che viene detto (le affermazioni, l'esagerazione, la lunghezza, i giri di parole), MAI la persona o le sue caratteristiche. Niente insulti, volgarità, offese a gruppi o a categorie. Battute brevi e riconoscibili, senza spiegarle. `
-    : `I commenti sono seri ed equilibrati: fai notare le ipotesi su cui poggia il discorso, cosa manca o cosa varrebbe la pena verificare. Su politica e temi controversi resta neutrale e non schierarti. Non dare consigli finanziari, legali o medici e non fare previsioni. `) +
-  `I commenti NON introducono fatti nuovi: niente cifre, date, nomi di persone, aziende o luoghi che non sono nel vocale. Se non hai nulla di sensato da commentare, scrivi un solo commento breve e generico.`;
+    ? `I commenti sono ironici e pungenti ma bonari: prendi in giro ciò che viene detto in quel paragrafo (le affermazioni, l'esagerazione, i giri di parole), MAI la persona o le sue caratteristiche. Niente insulti, volgarità, offese a gruppi o a categorie. Battute brevi e riconoscibili, senza spiegarle. `
+    : `I commenti sono seri ed equilibrati: fai notare le ipotesi su cui poggia quel passaggio, cosa manca o cosa varrebbe la pena verificare. Su politica e temi controversi resta neutrale e non schierarti. Non dare consigli finanziari, legali o medici e non fare previsioni. `) +
+  `I commenti NON introducono fatti nuovi: niente cifre, date, nomi di persone, aziende o luoghi che non sono nel vocale.`;
 const bulletsPrompt = (max: number) =>
   `Riassumi il testo in punti elenco BREVI (una riga ciascuno, una sola idea), SEMPRE IN ITALIANO anche se il testo è in un'altra lingua. ` +
   `Al massimo ${max} punti: se servono di più, unisci le idee molto vicine. ` +
@@ -346,14 +348,15 @@ Deno.serve(async (req) => {
       }
     }
     if (mode === "comment") {
-      // riassunto fedele + commenti che non introducono fatti nuovi; un solo ritentativo, poi niente commento
+      // paragrafi di riassunto fedele, ciascuno con un commento che non introduce fatti nuovi; un solo ritentativo, poi niente commenti
       const compose = (raw: string) => {
-        const p = parseComment(raw);
-        const summary = dropEmptyClaims(p.summary) || p.summary;
-        return { summary, ok: !!summary && summaryFaithful(summary, text), comments: safeComments(p.comments, text), asked: p.comments.length };
+        const paras = parseIntegrated(raw).map((p) => ({ summary: dropEmptyClaims(p.summary) || p.summary, comment: p.comment }));
+        const all = paras.map((p) => p.summary).join(" ");
+        const kept = paras.map((p) => ({ summary: p.summary, comment: p.comment && isSafeComment(p.comment, text) ? p.comment : null }));
+        return { paras: kept, ok: !!all && summaryFaithful(all, text), asked: paras.filter((p) => p.comment).length, good: kept.filter((p) => p.comment).length };
       };
       let c = compose(out);
-      if (!c.ok || (c.asked > 0 && c.comments.length === 0)) {
+      if (!c.ok || (c.asked > 0 && c.good === 0)) {
         const again = (await reserve(cost)) ? await ask(0.3, " ATTENZIONE: nel riassunto usa solo parole, nomi e numeri presenti nel testo; nei commenti niente cifre, nomi o fatti che non sono nel testo, e niente insulti.") : null;
         if (again) { const c2 = compose(again); if (c2.ok) { c = c2; outcome = "ok_retry"; } }
       }
@@ -362,8 +365,8 @@ Deno.serve(async (req) => {
         outcome = "ok_commentfail";
         notice = "Non riesco a commentarlo in modo sicuro: ti mostro la trascrizione originale.";
       } else {
-        out = c.summary + (c.comments.length ? `\n\nCommento:\n${c.comments.map((x) => `- ${x}`).join("\n")}` : "");
-        if (!c.comments.length) { outcome = "ok_nocomment"; notice = "Nessun commento sicuro da aggiungere: ecco il riassunto."; }
+        out = c.paras.map((p) => p.summary + (p.comment ? `\n💬 ${p.comment}` : "")).join("\n\n");
+        if (!c.good) { outcome = "ok_nocomment"; notice = "Nessun commento sicuro da aggiungere: ecco il riassunto."; }
       }
     }
     if (mode === "clean" && !cleanFaithful(out, text)) {
