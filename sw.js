@@ -13,9 +13,9 @@ function openDb() {
 }
 
 const MAX_ITEMS = 10;
-const GROUP_WINDOW = 30 * 60 * 1000; // un vocale condiviso entro 30 minuti si aggiunge al gruppo ancora aperto
 
-// i vocali condivisi si accumulano in un gruppo ('group'); dopo "Elabora" il gruppo si chiude e il prossimo vocale ne apre uno nuovo
+// un vocale condiviso apre sempre un gruppo nuovo (sostituisce quello non elaborato), tranne se l'utente ha premuto
+// "Aggiungi un altro vocale" (group.append = scadenza dell'attesa, impostata dalla pagina): allora si aggiunge e l'attesa finisce
 async function addShared(files) {
   const db = await openDb();
   try {
@@ -27,7 +27,11 @@ async function addShared(files) {
       get.onsuccess = () => {
         const now = Date.now();
         let group = get.result;
-        if (!(group && group.open && now - group.updated < GROUP_WINDOW)) group = { items: [], open: true, updated: now };
+        let replaced = false;
+        if (!(group && group.open && group.items && group.items.length && group.append > now)) {
+          replaced = !!(group && group.open && group.items && group.items.length);
+          group = { items: [], open: true, updated: now, append: 0 };
+        }
         let added = 0;
         for (const f of files) {
           if (group.items.some((i) => i.name === f.name && i.size === f.size)) { status = 'dup'; continue; }
@@ -35,7 +39,8 @@ async function addShared(files) {
           group.items.push({ id: crypto.randomUUID(), blob: f, name: f.name, type: f.type, size: f.size, receivedAt: now });
           added++;
         }
-        if (added) status = 'ok';
+        if (added) status = replaced ? 'new' : 'ok';
+        group.append = 0;
         group.updated = now;
         st.put(group, 'group');
         st.delete('latest');

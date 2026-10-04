@@ -82,10 +82,12 @@
         </div>
         <audio id="player" preload="auto"></audio>
       </div>
+      <button id="add-more" class="add-more" type="button" hidden>Aggiungi un altro vocale</button>
+      <div id="waiting" class="waiting" hidden><span>In attesa del prossimo vocale da WhatsApp…</span><button id="wait-cancel" type="button">Annulla</button></div>
       <div id="group" class="group" hidden>
         <div class="g-head"><b>Vocali aggiunti</b><span><span id="group-count"></span> · <span id="group-total"></span></span></div>
         <ol id="group-list" class="g-list"></ol>
-        <p class="g-hint">Per aggiungerne un altro, condividilo da WhatsApp con VoiceBrief. Vengono ordinati per data. Funziona meglio se sono tutti della stessa persona.</p>
+        <p class="g-hint">Vengono ordinati per data. Funziona meglio se sono tutti della stessa persona. Un vocale condiviso senza premere "Aggiungi un altro vocale" parte da zero.</p>
       </div>
 
       <h1 id="pick-title">Come vuoi elaborarlo?</h1>
