@@ -62,7 +62,7 @@ if (splitBrief("- uno\n- due").brief !== null) { bad++; console.log("FAIL splitB
 const eight = "In breve: x.\n" + Array.from({ length: 8 }, (_, i) => `- p${i + 1}`).join("\n");
 const capped = capBullets(eight, 6);
 if (capped.split("\n").filter((l) => l.startsWith("- ")).length !== 6 || !capped.startsWith("In breve")) { bad++; console.log("FAIL capBullets", JSON.stringify(capped)); }
-for (const [s, exp] of [[74, 7], [60, 6], [30, 3], [10, 3], [300, 15], [600, 15]]) { if (maxBulletsFor(s) !== exp) { bad++; console.log("FAIL maxBulletsFor", s, maxBulletsFor(s), "atteso", exp); } }
+for (const [s, exp] of [[74, 5], [60, 4], [30, 3], [10, 3], [300, 10], [600, 10]]) { if (maxBulletsFor(s) !== exp) { bad++; console.log("FAIL maxBulletsFor", s, maxBulletsFor(s), "atteso", exp); } }
 for (const [w, exp] of [["ci vediamo", true], ["incontro", true], ["appuntamento", true], [null, true], ["partita del Bologna", false], ["colazione", false], ["riunione", false], ["ci vediamo per la colazione", false]]) {
   const got = isGenericWhat(w); if (got !== exp) { bad++; console.log("FAIL isGenericWhat", JSON.stringify(w), "atteso", exp, "ottenuto", got); }
 }
