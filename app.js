@@ -38,6 +38,8 @@ const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padSta
 const setStatus = (msg, isErr) => { $('status').textContent = msg || ''; $('status').classList.toggle('err', !!isErr); };
 const show = (id, on) => { $(id).hidden = !on; };
 
+let curView = 'idle';
+let installEvent = null; // beforeinstallprompt (Android/Chrome)
 function showView(view) { // 'idle' | 'pick' | 'recording' | 'working' | 'result'
   show('idle', view === 'idle');
   show('recording', view === 'recording');
@@ -45,6 +47,8 @@ function showView(view) { // 'idle' | 'pick' | 'recording' | 'working' | 'result
   show('pick', view === 'pick');
   show('result', view === 'result');
   show('brand', view !== 'result');
+  curView = view;
+  updateInstall();
   show('rec-start', view === 'idle'); // registrare è un'opzione secondaria, solo da qui
   if (view !== 'pick') pausePlayer();
 }
@@ -442,6 +446,31 @@ $('clear').onclick = async () => {
   showView('idle');
   setStatus('Audio eliminato.');
 };
+// --- invito a installare (solo chi apre il link da browser) ---
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const installSnoozed = () => Date.now() - Number(safeLS.get('vb_install_x') || 0) < 7 * 864e5;
+function updateInstall() {
+  const can = !isStandalone() && !installSnoozed() && (installEvent || isIOS());
+  if (can) {
+    $('install-msg').textContent = installEvent
+      ? 'Installa VoiceBrief: la trovi tra le app e ci condividi i vocali di WhatsApp.'
+      : 'Per installarla: tocca Condividi, poi «Aggiungi alla schermata Home».';
+    show('install-btn', !!installEvent);
+  }
+  show('install', !!can && curView === 'idle');
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent = e; updateInstall(); });
+window.addEventListener('appinstalled', () => { installEvent = null; show('install', false); });
+$('install-btn').onclick = async () => {
+  if (!installEvent) return;
+  const ev = installEvent;
+  installEvent = null;
+  show('install', false);
+  try { await ev.prompt(); await ev.userChoice; } catch { /* annullato */ }
+};
+$('install-x').onclick = () => { safeLS.set('vb_install_x', String(Date.now())); show('install', false); };
+updateInstall();
 $('env').textContent =
   (matchMedia('(display-mode: standalone)').matches ? 'Installata' : 'Browser') + ' · v' + self.VB.VERSION;
 
