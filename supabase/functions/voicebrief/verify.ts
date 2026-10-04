@@ -93,11 +93,26 @@ export function maxBulletsFor(seconds: number): number {
 }
 
 // "cosa" troppo generico ("ci vediamo", "incontro") non informa: lo si scarta
-const GENERIC_WHAT = new Set(["ci", "vediamo", "vediamoci", "troviamo", "troviamoci", "incontriamo", "sentiamo", "vado", "andiamo", "facciamo", "incontro", "appuntamento", "evento", "cosa"]);
+const GENERIC_WHAT = new Set(["ci", "vediamo", "vediamoci", "troviamo", "troviamoci", "incontriamo", "sentiamo", "vado", "andiamo", "facciamo", "incontro", "appuntamento", "evento", "cosa", "mangiare", "cenare", "pranzare", "uscire", "venire", "andare", "passare", "trovarci", "vederci", "vedersi", "incontrarci", "incontrarsi", "mangiamo", "andiamo", "usciamo"]);
 export function isGenericWhat(v: string | null): boolean {
   if (!v) return true;
   const toks = tokens(v).filter((t) => !STOP.has(t));
   return toks.length === 0 || toks.every((t) => GENERIC_WHAT.has(t));
+}
+
+// "mangiare da Nonna Rosa" + dove "da Nonna Rosa": il luogo sta già in "Dove", dal "Cosa" si toglie
+const PLACE_PREPS = new Set(["da", "dal", "dalla", "dallo", "al", "alla", "allo", "a", "in", "presso", "di", "del", "della", "nel", "nella"]);
+export function stripPlace(what: string | null, where: string | null): string | null {
+  if (!what || !where) return what;
+  const wt = new Set(tokens(where).filter((t) => !PLACE_PREPS.has(t)));
+  if (wt.size === 0) return what;
+  const kept = what.split(/\s+/).filter((w) => {
+    const t = tokens(w)[0];
+    return !(t && wt.has(t));
+  });
+  while (kept.length && PLACE_PREPS.has(tokens(kept[kept.length - 1])[0] ?? "")) kept.pop();
+  const out = kept.join(" ").trim();
+  return out || null;
 }
 
 // "cosa" che ripete solo il luogo ("McDonald's" / "McDonald's") non informa: lo si scarta

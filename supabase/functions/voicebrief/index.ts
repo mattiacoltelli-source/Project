@@ -1,7 +1,7 @@
 // VoiceBrief: audio -> testo (STT OpenAI) -> riassunto (LLM OpenAI).
 // Segreto (Supabase secrets): OPENAI_API_KEY. Nessun contenuto viene salvato o loggato.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, usefulEvent, summaryFaithful, dropEmptyClaims, maxSentencesFor, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
+import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, stripPlace, usefulEvent, summaryFaithful, dropEmptyClaims, maxSentencesFor, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
 
 const ORIGIN = "https://mattiacoltelli-source.github.io";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -35,8 +35,9 @@ const summaryPrompt = (max: number) =>
   `Scrivi un riassunto in prosa, in italiano (anche se il testo è in un'altra lingua), scorrevole e naturale, come lo racconteresti a voce a un amico. ` +
   `Scrivi al massimo ${max} frasi, brevi e chiare. ` +
   `La prima frase dice subito il messaggio centrale: di cosa si tratta o cosa vuole chi parla. ` +
-  `Poi i dettagli che contano, solo se detti: chi, cosa, quando, dove, numeri e importi. ` +
+  `Poi i dettagli che contano, solo se detti: chi, cosa, quando, dove (il luogo non va mai omesso), numeri e importi. ` +
   `Se chi parla fa una domanda o chiede qualcosa a chi ascolta, dillo in modo chiaro nell'ultima frase. ` +
+  `Non iniziare ogni frase con "Chi parla": usa verbi senza soggetto ("Invita…", "Chiede…") o i nomi quando sono detti. ` +
   `Niente elenchi, niente titoli, niente introduzioni come "Il vocale dice". Non aggiungere commenti, opinioni o conclusioni tue, e non scrivere frasi su ciò che manca (es. \"non ci sono richieste\"). ` +
   `Se il testo è confuso o parte a metà, riassumi solo ciò che è chiaro.`;
 const bulletsPrompt = (max: number) =>
@@ -44,16 +45,17 @@ const bulletsPrompt = (max: number) =>
   `Al massimo ${max} punti: se servono di più, unisci le idee molto vicine. ` +
   `Se dal vocale si capisce con certezza di cosa o di chi si parla (il tema è detto o evidente), apri con una riga "In breve: <una sola frase in italiano>"; ` +
   `se il contesto non è esplicito o il vocale parte a metà discorso, NON scrivere quella riga. Non inventare né dedurre il contesto. ` +
+  `Se un punto parla di un impegno o di un invito, riporta sempre quando, dove e con chi, se detti. ` +
   `Poi i punti, ognuno su una riga che inizia con "- ". Nessun'altra introduzione.`;
 const EVENT_PROMPT =
   "Elenca gli impegni in programma citati nel testo (massimo 3, nell'ordine in cui compaiono): incontri e appuntamenti, ma anche attività con un giorno, un'ora o un luogo " +
   "(es. una partita, una visita, una colazione, un volo, una lezione), fatte da chi parla o da altri. Un impegno = un oggetto: non fondere impegni diversi. " +
   "Escludi eventi passati, ipotetici o vaghi, fatti generali e ricordi (es. 'magari un giorno ci vediamo'). Se non ce n'è nessuno, restituisci una lista vuota. " +
   "Per ogni impegno compila i campi usando SOLO parole dette nel testo, senza dedurre né convertire nulla. " +
-  "what = che cosa si fa, con le parole dette (es. 'partita del Bologna', 'colazione', 'riunione'); null se non è detto. " +
+  "what = che cosa si fa, con le parole dette, SENZA il luogo (es. 'partita del Bologna', 'colazione', 'riunione'; 'mangiare da Nonna Rosa' = what 'mangiare' e where 'da Nonna Rosa'); null se non è detto. " +
   "when = giorno e/o ora esattamente come detti, con la preposizione (es. 'domani pomeriggio', 'alle 20', 'sabato alle 8'; non convertire in 24 ore). " +
   "Se il giorno è detto una sola volta e vale per più impegni nella stessa frase, riportalo in ciascuno (es. 'domani mattina'). " +
-  "where = luogo come detto. " +
+  "where = luogo come detto, anche quando è detto insieme all'attività. " +
   "who = persone con cui ci si incontra o che partecipano; non chi è nominato solo per altri motivi. " +
   "kind = 'booking' SOLO se qualcuno dice di aver GIÀ prenotato (es. 'ho prenotato da Gianni'); intenzioni, proposte o richieste di prenotare ('devo prenotare', 'prenoti tu?') non sono 'booking': in quel caso 'appointment'. " +
   "party = per una prenotazione, il numero di persone come detto (es. 'per quattro'), altrimenti null. " +
@@ -67,8 +69,9 @@ const SYSTEM_BASE =
 // riassunti ed estrazione: il soggetto resta esplicito; testo pulito e traduzione invece restano in prima persona
 const SYSTEM =
   SYSTEM_BASE +
-  "Mantieni il soggetto di ogni azione come nel testo: per le azioni di chi manda il vocale scrivi 'chi parla' (es. 'Chi parla deve passare da Marco'), " +
-  "non usare forme impersonali ('bisogna', 'si deve') quando il soggetto è una persona precisa. ";
+  "Tieni chiaro chi fa cosa, ma senza ripetere il soggetto: preferisci forme dirette o nominali ('Invito a cena da Luca alle 20', 'Richiesta di portare il vino', 'Proposta di vedersi giovedì'), " +
+  "usa i nomi quando sono detti, e scrivi 'chi parla' solo se serve a evitare ambiguità (mai in più di un punto, mai per iniziare ogni riga). " +
+  "Non usare forme impersonali ('bisogna', 'si deve') quando il soggetto è una persona precisa. ";
 
 const cors = {
   "Access-Control-Allow-Origin": ORIGIN,
@@ -240,6 +243,7 @@ Deno.serve(async (req) => {
             when: keep(clean(raw?.when)), where: keep(clean(raw?.where)), who: keep(clean(raw?.who)),
             party: booking ? keep(clean(raw?.party)) : null,
           };
+          e.what = stripPlace(e.what, e.where);
           if (isGenericWhat(e.what) || sameAsWhere(e.what, e.where)) e.what = null;
           const proposed = [raw?.what, raw?.when, raw?.where, raw?.who, raw?.party].filter((v) => clean(v)).length;
           dropped += proposed - [e.what, e.when, e.where, e.who, e.party].filter(Boolean).length;
