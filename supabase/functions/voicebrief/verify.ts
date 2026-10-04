@@ -216,3 +216,32 @@ export function dropAddressee(who: string | null, text: string): string | null {
   if (kept.length === names.length) return who;
   return kept.length === 1 ? kept[0] : kept.slice(0, -1).join(", ") + " e " + kept[kept.length - 1];
 }
+
+// --- Modalità "Commento": riassunto fedele + poche righe di commento separate ---
+// Formato atteso: <riassunto>\n\nCommento:\n- riga\n- riga
+export function parseComment(out: string): { summary: string; comments: string[] } {
+  const m = /^\s*commento\s*[:\-–]\s*$/im.exec(out);
+  if (!m) return { summary: out.trim(), comments: [] };
+  const summary = out.slice(0, m.index).trim();
+  const comments = out.slice(m.index + m[0].length).split("\n").map((l) => l.replace(/^\s*([-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean);
+  return { summary, comments };
+}
+
+const INSULT = /\b(cretin\w*|idiot\w*|stupid\w*|imbecill\w*|coglion\w*|deficient\w*|scem\w*|stronz\w*|merd\w*|ritardat\w*|handicappat\w*|fanculo|vaffa\w*)\b/i;
+// Un commento può esprimere un parere, ma non introdurre fatti: niente cifre o nomi propri che nel vocale non ci sono, niente insulti.
+export function safeComments(comments: string[], text: string): string[] {
+  const inAll = new Set(tokens(text));
+  const noArt = (x: string) => x.replace(/\b(un|uno|una|one)\b/gi, " ");
+  const inNums = new Set(tokens(noArt(text)));
+  return comments.filter((c) => {
+    if (INSULT.test(c)) return false;
+    if (tokens(noArt(c)).some((t) => /^\d+$/.test(t) && !inNums.has(t))) return false;
+    for (const sentence of c.split(/(?<=[.!?])\s+/)) {
+      for (const w of sentence.split(/\s+/).slice(1)) {
+        const m = /^[("'«]*([A-ZÀ-Ù][a-zà-ù]{2,})/.exec(w);
+        if (m && !inAll.has(tokens(m[1])[0])) return false;
+      }
+    }
+    return true;
+  }).slice(0, 3);
+}

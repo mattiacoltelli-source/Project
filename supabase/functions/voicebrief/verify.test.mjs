@@ -1,5 +1,5 @@
 // node --experimental-strip-types supabase/functions/voicebrief/verify.test.mjs
-import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere, usefulEvent, stripPlace, dropAddressee, summaryFaithful, dropEmptyClaims, isItalianText, maxSentencesFor } from "./verify.ts";
+import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere, usefulEvent, stripPlace, dropAddressee, parseComment, safeComments, summaryFaithful, dropEmptyClaims, isItalianText, maxSentencesFor } from "./verify.ts";
 const T = (s) => new Set(tokens(s));
 const t1 = "Oh allora sabato ci vediamo alle 8, però prima devo passare da Marco a prendere la macchina, quindi magari facciamo direttamente davanti al ristorante da Gigi.";
 const cases = [
@@ -103,5 +103,11 @@ for (const [w, t, exp] of [
   ["Marco", "Sabato ci vediamo io, te e Marco da Gigi, Marco porta il vino.", "Marco"],
   ["Luca", "Ciao Luca, ci vediamo domani con Luca e Anna?", "Luca"],
 ]) { const got = dropAddressee(w, t); if (got !== exp) { bad++; console.log("FAIL dropAddressee", w, "->", got); } }
+{ const p = parseComment("Riassunto di prova.\n\nCommento:\n- Prima battuta.\n- Seconda battuta.");
+  if (p.summary !== "Riassunto di prova." || p.comments.length !== 2 || p.comments[1] !== "Seconda battuta.") { bad++; console.log("FAIL parseComment", JSON.stringify(p)); }
+  if (parseComment("Solo riassunto.").comments.length !== 0) { bad++; console.log("FAIL parseComment senza commento"); }
+  const t = "Ragazzi stasera ho comprato tre giocatori a quindici crediti, secondo me vinciamo il campionato di sicuro.";
+  const got = safeComments(["Ottimismo a livello fantacalcio, come sempre.", "Ha speso 40 crediti e non lo dice.", "Poi sbaglia come Mourinho.", "Che idiota."], t);
+  if (got.length !== 1 || !got[0].startsWith("Ottimismo")) { bad++; console.log("FAIL safeComments", JSON.stringify(got)); } }
 console.log(bad ? `${bad} falliti` : "tutti ok");
 process.exit(bad ? 1 : 0);
