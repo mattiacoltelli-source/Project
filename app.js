@@ -271,14 +271,14 @@ function renderWait() {
   clearTimeout(waitTimer);
   if (waiting) waitTimer = setTimeout(() => { waitUntil = 0; renderWait(); }, waitUntil - Date.now() + 50);
 }
-async function addMore() {
-  if (busy) return;
+// il link nativo (intent://) apre WhatsApp: deve partire dal tocco, quindi qui non si aspetta nulla prima della navigazione
+function addMore(e) {
+  if (busy) { e.preventDefault(); return; }
   waitUntil = Date.now() + 10 * 60 * 1000;
-  try { await writeGroup(items, true, waitUntil); } catch { waitUntil = 0; setStatus('Non riesco a salvare: riprova.', true); return; }
-  renderWait();
+  writeGroup(items, true, waitUntil).catch(() => {});
+  setTimeout(renderWait, 300); // dopo, così il tocco non perde il suo link
   const t = Date.now();
-  location.href = 'whatsapp://'; // apre WhatsApp: da lì tieni premuto il vocale e condividilo con VoiceBrief
-  setTimeout(() => { if (!document.hidden && Date.now() - t < 4000) setStatus('Apri WhatsApp, tieni premuto il vocale e condividilo con VoiceBrief.'); }, 1500);
+  setTimeout(() => { if (!document.hidden && Date.now() - t < 4000) setStatus('Se WhatsApp non si è aperto, aprilo tu: tieni premuto il vocale e condividilo con VoiceBrief.'); }, 1500);
 }
 async function cancelWait() {
   waitUntil = 0;
