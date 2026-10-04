@@ -107,6 +107,7 @@ li[data-state=done] .w-done { display: block; }
 .out .brief { padding-bottom: 16px; border-bottom: 1px solid #dbe6e3; font-weight: 700; color: var(--deep); }
 .out .brief small { display: block; margin-bottom: 2px; font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); }
 .out .item { display: flex; gap: 12px; align-items: flex-start; }
+.out .item small { display: block; margin-top: 2px; font-size: 0.82em; color: var(--muted, #5b6b68); line-height: 1.35; }
 .out .item::before { content: ''; width: 8px; height: 8px; margin-top: 10px; flex: none; border-radius: 50%; background: var(--brand); }
 
 .event { margin-top: 12px; padding: 18px 20px 8px; border: 2px solid var(--line); border-radius: 22px; background: #fff; }

@@ -174,8 +174,10 @@ function renderResult(mode, text) {
   lastOutput = text;
   const box = $('out');
   box.textContent = '';
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const rows = text.split('\n').filter((l) => l.trim());
+  const lines = rows.map((l) => l.trim());
   let hasComment = false;
+  let lastItem = null;
   for (const [i, l] of lines.entries()) {
     const cm = /^💬\s*(.+)$/.exec(l);
     if (cm) { // commento in coda al paragrafo: riga a parte, in corsivo e con una barra, così si capisce che è un'opinione
@@ -199,9 +201,23 @@ function renderResult(mode, text) {
       continue;
     }
     const m = /^([-*•]|\d+[.)])\s+(.*)$/.exec(l);
+    if (!m && lastItem && /^\s{2,}/.test(rows[i])) { // riga di dettaglio rientrata: sotto il suo punto
+      const sub = document.createElement('small');
+      sub.textContent = l.replace(/\*\*/g, '');
+      lastItem.appendChild(sub);
+      continue;
+    }
     const el = document.createElement(m ? 'div' : 'p');
-    if (m) el.className = 'item';
-    el.textContent = (m ? m[2] : l).replace(/\*\*/g, '');
+    if (m) {
+      el.className = 'item';
+      const t = document.createElement('span');
+      t.textContent = m[2].replace(/\*\*/g, '');
+      el.appendChild(t);
+      lastItem = t;
+    } else {
+      el.textContent = l.replace(/\*\*/g, '');
+      lastItem = null;
+    }
     box.appendChild(el);
   }
   if (hasComment && currentTone() !== 'sharp') {

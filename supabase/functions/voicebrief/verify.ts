@@ -79,17 +79,21 @@ export function splitBrief(out: string): { brief: string | null; rest: string } 
 }
 
 // tetto rigido ai punti elenco: oltre il massimo si scartano i successivi
+// le righe di dettaglio (rientrate, sotto un punto) seguono il loro punto: se il punto cade, cadono anche loro
 export function capBullets(out: string, max: number): string {
-  let n = 0;
+  let n = 0, dropping = false;
   return out
     .split("\n")
-    .filter((l) => (/^\s*([-*•]|\d+[.)])\s+/.test(l) ? ++n <= max : true))
+    .filter((l) => {
+      if (/^[-*•]\s+|^\d+[.)]\s+/.test(l.trimStart()) && !/^\s{2,}/.test(l)) { dropping = ++n > max; return !dropping; }
+      return !(dropping && /^\s{2,}\S/.test(l));
+    })
     .join("\n");
 }
 
-// massimo 6 punti al minuto (1 ogni 10 s), tra 3 e 15
+// massimo 4 punti al minuto (1 ogni 15 s), tra 3 e 10: ogni punto ha anche una riga di dettaglio
 export function maxBulletsFor(seconds: number): number {
-  return Math.min(15, Math.max(3, Math.round(seconds / 10)));
+  return Math.min(10, Math.max(3, Math.round(seconds / 15)));
 }
 
 // "cosa" troppo generico ("ci vediamo", "incontro") non informa: lo si scarta

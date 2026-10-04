@@ -74,11 +74,11 @@ const commentPrompt = (max: number, tone: string) =>
   `I commenti NON introducono fatti nuovi: niente cifre, date, nomi di persone, aziende o luoghi che non sono nel vocale.`;
 const bulletsPrompt = (max: number) =>
   `Riassumi il testo in punti elenco BREVI (una riga ciascuno, una sola idea), SEMPRE IN ITALIANO anche se il testo è in un'altra lingua. ` +
-  `Al massimo ${max} punti: se servono di più, unisci le idee molto vicine. ` +
+  `Al massimo ${max} punti: raggruppa le idee vicine e tieni solo i temi che contano, meglio pochi punti chiari che tanti. ` +
   `Se dal vocale si capisce con certezza di cosa o di chi si parla (il tema è detto o evidente), apri con una riga "In breve: <una sola frase in italiano>"; ` +
   `se il contesto non è esplicito o il vocale parte a metà discorso, NON scrivere quella riga. Non inventare né dedurre il contesto. ` +
   `Se un punto parla di un impegno o di un invito, riporta sempre quando, dove e con chi, se detti. ` +
-  `Poi i punti, ognuno su una riga che inizia con "- ". Nessun'altra introduzione.`;
+  `Poi i punti: ogni punto è una riga che inizia con "- " (il tema, in poche parole) seguita da UNA riga di dettaglio subito sotto, che inizia con due spazi (non con "-"): una frase breve con l'informazione concreta detta nel vocale (cosa, chi, quando, dove, numeri). Se non c'è nulla di concreto da aggiungere, ometti la riga di dettaglio. Nessun'altra introduzione.`;
 const EVENT_PROMPT =
   "Elenca gli impegni in programma citati nel testo (massimo 3, nell'ordine in cui compaiono): incontri e appuntamenti, ma anche attività con un giorno, un'ora o un luogo " +
   "(es. una partita, una visita, una colazione, un volo, una lezione), fatte da chi parla o da altri. Un impegno = un oggetto: non fondere impegni diversi. " +
@@ -307,7 +307,7 @@ Deno.serve(async (req) => {
     const cost = (inTok * LLM_IN_MICRO_PER_TOKEN + outTok * LLM_OUT_MICRO_PER_TOKEN) * (useFun ? FUN_COST_X : mode === "comment" ? 1.4 : 1);
     if (!(await reserve(cost)))
       return done(429, "budget", { error: "budget", message: "Tetto di spesa mensile raggiunto. Si sblocca il mese prossimo." });
-    // punti proporzionati alla durata (max 6 al minuto): secondi dal player, altrimenti stimati dalle parole
+    // punti proporzionati alla durata (max 4 al minuto): secondi dal player, altrimenti stimati dalle parole
     const words = text.trim().split(/\s+/).length;
     const reqSecs = Number(body?.seconds);
     const secs = reqSecs > 0 && reqSecs <= 900 ? reqSecs : words / 2.5;
