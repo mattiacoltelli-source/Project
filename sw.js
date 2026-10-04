@@ -12,24 +12,47 @@ function openDb() {
   });
 }
 
-async function saveShared(entry) {
+const MAX_ITEMS = 10;
+const GROUP_WINDOW = 30 * 60 * 1000; // un vocale condiviso entro 30 minuti si aggiunge al gruppo ancora aperto
+
+// i vocali condivisi si accumulano in un gruppo ('group'); dopo "Elabora" il gruppo si chiude e il prossimo vocale ne apre uno nuovo
+async function addShared(files) {
   const db = await openDb();
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction('files', 'readwrite');
-    tx.objectStore('files').put(entry, 'latest');
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-  });
-  db.close();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('files', 'readwrite');
+      const st = tx.objectStore('files');
+      let status = 'ok';
+      const get = st.get('group');
+      get.onsuccess = () => {
+        const now = Date.now();
+        let group = get.result;
+        if (!(group && group.open && now - group.updated < GROUP_WINDOW)) group = { items: [], open: true, updated: now };
+        let added = 0;
+        for (const f of files) {
+          if (group.items.some((i) => i.name === f.name && i.size === f.size)) { status = 'dup'; continue; }
+          if (group.items.length >= MAX_ITEMS) { status = 'full'; break; }
+          group.items.push({ id: crypto.randomUUID(), blob: f, name: f.name, type: f.type, size: f.size, receivedAt: now });
+          added++;
+        }
+        if (added) status = 'ok';
+        group.updated = now;
+        st.put(group, 'group');
+        st.delete('latest');
+      };
+      tx.oncomplete = () => resolve(status);
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally { db.close(); }
 }
 
 async function handleShare(request) {
   let status = 'ok';
   try {
     const form = await request.formData();
-    const file = form.getAll('audio').find((f) => f instanceof File);
-    if (!file) throw new Error('nofile');
-    await saveShared({ blob: file, name: file.name, type: file.type, size: file.size, receivedAt: Date.now() });
+    const files = form.getAll('audio').filter((f) => f instanceof File);
+    if (!files.length) throw new Error('nofile');
+    status = await addShared(files);
   } catch (e) {
     status = e && e.message === 'nofile' ? 'nofile' : 'error';
   }
