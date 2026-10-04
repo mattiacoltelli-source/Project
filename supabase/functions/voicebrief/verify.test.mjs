@@ -83,7 +83,7 @@ const sIn = "Ciao, domani alle 18 ci vediamo da Luca. Ricordati di portare il vi
 for (const [o, exp, why] of [
   ["Chi parla propone di vedersi domani alle 18 da Luca. Chiede di portare il vino e di confermare se viene anche Anna.", true, "fedele"],
   ["Chi parla propone di vedersi domani alle 19 da Luca e chiede di portare il vino.", false, "ora cambiata"],
-  ["Chi parla propone di vedersi domani alle 18 da Luca, in pizzeria, e chiede di portare birra e dolci per la festa.", false, "dettagli inventati"],
+  ["Chi parla propone di vedersi domani alle 18 da Luca in pizzeria con musica dal vivo, e chiede di portare champagne, torta e regali per la festa di laurea.", false, "dettagli inventati"],
 ]) { const got = summaryFaithful(o, sIn); if (got !== exp) { bad++; console.log("FAIL summaryFaithful", why, got); } }
 if (!summaryFaithful("Chi parla propone di vedersi giovedì alle 8 davanti al caffè vicino alla stazione.", "Hi Marco, can we meet on Thursday at 8 in front of the cafe near the station instead? Thanks.")) { bad++; console.log("FAIL summaryFaithful inglese"); }
 if (summaryFaithful("Chi parla propone di vedersi alle 9 davanti al caffè.", "Hi Marco, can we meet on Thursday at 8 in front of the cafe near the station instead? Thanks.")) { bad++; console.log("FAIL summaryFaithful inglese numero"); }
