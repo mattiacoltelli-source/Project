@@ -124,3 +124,8 @@ li[data-state=done] .w-done { display: block; }
 
 .banner { position: sticky; top: 0; z-index: 2; padding: 10px 16px; background: #fff3cd; display: flex; gap: 12px; align-items: center; }
 .banner button { min-height: 40px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--deep); color: #fff; font-weight: 700; }
+
+/* invito a installare */
+.banner.install { background: #e8f5f3; color: #12201e; font-size: 14px; }
+.banner.install span { flex: 1; }
+.banner.install .x { min-height: 40px; min-width: 40px; padding: 0; background: transparent; color: var(--deep); font-size: 24px; line-height: 1; }
