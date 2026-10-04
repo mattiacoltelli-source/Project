@@ -1,7 +1,7 @@
 // VoiceBrief: audio -> testo (STT OpenAI) -> riassunto (LLM OpenAI).
 // Segreto (Supabase secrets): OPENAI_API_KEY. Nessun contenuto viene salvato o loggato.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, stripPlace, usefulEvent, summaryFaithful, dropEmptyClaims, maxSentencesFor, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
+import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, stripPlace, dropAddressee, usefulEvent, summaryFaithful, dropEmptyClaims, maxSentencesFor, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
 
 const ORIGIN = "https://mattiacoltelli-source.github.io";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -56,7 +56,7 @@ const EVENT_PROMPT =
   "when = giorno e/o ora esattamente come detti, con la preposizione (es. 'domani pomeriggio', 'alle 20', 'sabato alle 8'; non convertire in 24 ore). " +
   "Se il giorno è detto una sola volta e vale per più impegni nella stessa frase, riportalo in ciascuno (es. 'domani mattina'). " +
   "where = luogo come detto, anche quando è detto insieme all'attività. " +
-  "who = persone con cui ci si incontra o che partecipano; non chi è nominato solo per altri motivi. " +
+  "who = persone con cui ci si incontra o che partecipano, in aggiunta a chi parla e a chi ascolta; NON inserire chi riceve il vocale (nominato solo come saluto o intercalare, es. 'bella zio', 'ciao Marco') né chi parla; non chi è nominato solo per altri motivi. " +
   "kind = 'booking' SOLO se qualcuno dice di aver GIÀ prenotato (es. 'ho prenotato da Gianni'); intenzioni, proposte o richieste di prenotare ('devo prenotare', 'prenoti tu?') non sono 'booking': in quel caso 'appointment'. " +
   "party = per una prenotazione, il numero di persone come detto (es. 'per quattro'), altrimenti null. " +
   "Se non sei sicuro al 100% di un campo, restituiscilo null: è meglio omettere che sbagliare. " +
@@ -244,6 +244,7 @@ Deno.serve(async (req) => {
             party: booking ? keep(clean(raw?.party)) : null,
           };
           e.what = stripPlace(e.what, e.where);
+          e.who = dropAddressee(e.who, etext);
           if (isGenericWhat(e.what) || sameAsWhere(e.what, e.where)) e.what = null;
           const proposed = [raw?.what, raw?.when, raw?.where, raw?.who, raw?.party].filter((v) => clean(v)).length;
           dropped += proposed - [e.what, e.when, e.where, e.who, e.party].filter(Boolean).length;
