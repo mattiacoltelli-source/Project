@@ -180,10 +180,14 @@ export function summaryFaithful(out: string, text: string): boolean {
   const stem = (t: string) => t.slice(0, 4); // radici corte: il riassunto riformula i verbi (vieni -> viene)
   const inStems = new Set(inTok.map(stem));
   const joined = new Set(inTok.slice(1).map((t, i) => stem(inTok[i] + t)));
-  const content = outTok.filter((t) => t.length >= 4 && !STOP.has(t) && !/^\d+$/.test(t) && !SUMMARY_FILLER.has(t));
-  if (content.length === 0) return true;
-  return content.filter((t) => inStems.has(stem(t)) || joined.has(stem(t))).length / content.length >= 0.55;
+  // solo le parole "pesanti" (6+ lettere, non di uso comune): un riassunto riformula e deduce parole leggere (mentre, molto, fatto...)
+  const content = outTok.filter((t) => t.length >= 6 && !STOP.has(t) && !/^\d+$/.test(t) && !SUMMARY_FILLER.has(t) && !COMMON_IT.has(t));
+  if (content.length < 3) return true;
+  return content.filter((t) => inStems.has(stem(t)) || joined.has(stem(t))).length / content.length >= 0.4;
 }
+
+// parole italiane molto comuni che un riassunto può usare senza averle sentite
+const COMMON_IT = new Set(["mentre", "quando", "perche", "quindi", "invece", "anche", "ancora", "sempre", "spesso", "molto", "molti", "molte", "tanti", "tanto", "stato", "stata", "stati", "state", "essere", "avere", "hanno", "aveva", "avevano", "facendo", "fatto", "fatta", "dopo", "prima", "durante", "secondo", "riguardo", "circa", "sopra", "sotto", "dentro", "fuori", "questo", "questa", "questi", "queste", "quello", "quella", "cosa", "cose", "qualcosa", "qualcuno", "nessuno", "ognuno", "altro", "altri", "altre", "stesso", "stessa", "solo", "tutto", "tutti", "tutte", "alcuni", "alcune", "maniera", "modo", "parte", "volta", "volte", "momento", "motivo", "punto", "situazione", "giornata", "persona", "persone", "ritiene", "pensa", "crede", "sostiene", "afferma", "ritenendo", "considera", "mostra", "esprime", "racconta", "descrive", "riflessione", "dubbio", "dubbi", "preoccupazione", "importante", "necessario", "possibile", "diverso", "diversa", "nuovo", "nuova", "recente", "attuale", "generale", "specifico", "specifica", "poiche", "oppure", "comunque", "nonostante", "attraverso", "insieme", "senza", "verso", "contro", "vicino", "lontano", "attenzione", "problema", "problemi", "risposta", "domanda", "richiesta", "conferma", "confermare", "partecipare", "invitato", "invitata", "chiaro", "chiara", "sarebbe", "potrebbe", "dovrebbe", "avrebbe", "aveva", "stava", "stavano", "continua", "continuare", "proprio", "propria", "propri", "proprie"]);
 
 // frasi che dichiarano ciò che manca ("Non ci sono richieste specifiche"): non informano, si tolgono
 export function dropEmptyClaims(out: string): string {
