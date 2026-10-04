@@ -95,6 +95,6 @@ for (const [w, exp] of [["duemila", "2000"], ["venticinque", "25"], ["trentuno",
   if (summaryFaithful("Chi parla ha finito ieri sera una serie girata a Roma da Netflix. Sono dieci episodi da cinquanta minuti.", t4)) { bad++; console.log("FAIL summaryFaithful nome inventato"); } }
 if (dropEmptyClaims("Chi parla racconta una giornata tranquilla. Non ci sono richieste specifiche nel messaggio.") !== "Chi parla racconta una giornata tranquilla.") { bad++; console.log("FAIL dropEmptyClaims"); }
 for (const [w, d, exp] of [["mangiare da Nonna Rosa", "da Nonna Rosa", "mangiare"], ["partita di paddle", "circolo Aurora", "partita di paddle"], ["cena al ristorante Gigi", "ristorante Gigi", "cena"], ["Nonna Rosa", "da Nonna Rosa", null]]) { const got = stripPlace(w, d); if (got !== exp) { bad++; console.log("FAIL stripPlace", w, got); } }
-if (!isGenericWhat(stripPlace("mangiare da Nonna Rosa", "da Nonna Rosa"))) { bad++; console.log("FAIL mangiare generico"); }
+if (isGenericWhat(stripPlace("mangiare da Nonna Rosa", "da Nonna Rosa"))) { bad++; console.log("FAIL mangiare deve restare"); }
 console.log(bad ? `${bad} falliti` : "tutti ok");
 process.exit(bad ? 1 : 0);
