@@ -82,8 +82,8 @@
         </div>
         <audio id="player" preload="auto"></audio>
       </div>
-      <a id="add-more" class="add-more" href="intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.whatsapp;end" hidden>Aggiungi un altro vocale</a>
-      <div id="waiting" class="waiting" hidden><span>In attesa del prossimo vocale da WhatsApp…</span><div class="w-actions"><a id="wait-open" href="intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.whatsapp;end">Apri WhatsApp</a><button id="wait-cancel" type="button">Annulla</button></div></div>
+      <a id="add-more" class="add-more" href="intent://send/?text=%20#Intent;scheme=whatsapp;end" hidden>Aggiungi un altro vocale</a>
+      <div id="waiting" class="waiting" hidden><span>In attesa del prossimo vocale da WhatsApp…</span><div class="w-actions"><a id="wait-open" href="intent://send/?text=%20#Intent;scheme=whatsapp;end">Apri WhatsApp</a><button id="wait-cancel" type="button">Annulla</button></div></div>
       <div id="group" class="group" hidden>
         <div class="g-head"><b>Vocali aggiunti</b><span><span id="group-count"></span> · <span id="group-total"></span></span></div>
         <ol id="group-list" class="g-list"></ol>
