@@ -221,31 +221,34 @@ export function dropAddressee(who: string | null, text: string): string | null {
   return kept.length === 1 ? kept[0] : kept.slice(0, -1).join(", ") + " e " + kept[kept.length - 1];
 }
 
-// --- Modalità "Commento": riassunto fedele + poche righe di commento separate ---
-// Formato atteso: <riassunto>\n\nCommento:\n- riga\n- riga
-export function parseComment(out: string): { summary: string; comments: string[] } {
-  const m = /^\s*commento\s*[:\-–]\s*$/im.exec(out);
-  if (!m) return { summary: out.trim(), comments: [] };
-  const summary = out.slice(0, m.index).trim();
-  const comments = out.slice(m.index + m[0].length).split("\n").map((l) => l.replace(/^\s*([-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean);
-  return { summary, comments };
+// --- Modalità "Commento": riassunto a paragrafi, con un commento breve in coda a ciascun paragrafo ---
+// Formato del modello: paragrafi separati da una riga vuota; le righe di commento iniziano con "> ".
+export type CPara = { summary: string; comment: string | null };
+export function parseIntegrated(out: string): CPara[] {
+  const paras: CPara[] = [];
+  for (const block of out.split(/\n\s*\n/)) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    const summary = lines.filter((l) => !/^>/.test(l)).join(" ").trim();
+    const comment = lines.filter((l) => /^>/.test(l)).map((l) => l.replace(/^>+\s*/, "").trim()).join(" ").trim() || null;
+    if (summary) paras.push({ summary, comment });
+    else if (comment && paras.length) paras[paras.length - 1].comment ??= comment; // commento staccato dal suo paragrafo
+  }
+  return paras;
 }
 
 const INSULT = /\b(cretin\w*|idiot\w*|stupid\w*|imbecill\w*|coglion\w*|deficient\w*|scem\w*|stronz\w*|merd\w*|ritardat\w*|handicappat\w*|fanculo|vaffa\w*)\b/i;
 // Un commento può esprimere un parere, ma non introdurre fatti: niente cifre o nomi propri che nel vocale non ci sono, niente insulti.
-export function safeComments(comments: string[], text: string): string[] {
+export function isSafeComment(c: string, text: string): boolean {
+  if (INSULT.test(c)) return false;
   const inAll = new Set(tokens(text));
   const noArt = (x: string) => x.replace(/\b(un|uno|una|one)\b/gi, " ");
   const inNums = new Set(tokens(noArt(text)));
-  return comments.filter((c) => {
-    if (INSULT.test(c)) return false;
-    if (tokens(noArt(c)).some((t) => /^\d+$/.test(t) && !inNums.has(t))) return false;
-    for (const sentence of c.split(/(?<=[.!?])\s+/)) {
-      for (const w of sentence.split(/\s+/).slice(1)) {
-        const m = /^[("'«]*([A-ZÀ-Ù][a-zà-ù]{2,})/.exec(w);
-        if (m && !inAll.has(tokens(m[1])[0])) return false;
-      }
+  if (tokens(noArt(c)).some((t) => /^\d+$/.test(t) && !inNums.has(t))) return false;
+  for (const sentence of c.split(/(?<=[.!?])\s+/)) {
+    for (const w of sentence.split(/\s+/).slice(1)) {
+      const m = /^[("'«]*([A-ZÀ-Ù][a-zà-ù]{2,})/.exec(w);
+      if (m && !inAll.has(tokens(m[1])[0])) return false;
     }
-    return true;
-  }).slice(0, 3);
+  }
+  return true;
 }
