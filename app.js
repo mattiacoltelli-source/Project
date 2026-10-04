@@ -45,7 +45,16 @@ async function readGroup() {
   if (old) return { items: [{ id: 'old', ...old }], open: false, updated: old.receivedAt || Date.now() };
   return null;
 }
-const writeGroup = (list, open) => idb('readwrite', (s) => { s.put({ items: list, open, updated: Date.now() }, 'group'); s.delete('latest'); });
+// scrive il gruppo mantenendo l'attesa di "Aggiungi un altro vocale" (append) se non viene passata
+const writeGroup = (list, open, append) => idb('readwrite', (s) => {
+  const get = s.get('group');
+  get.onsuccess = () => {
+    const prev = get.result;
+    s.put({ items: list, open, updated: Date.now(), append: append !== undefined ? append : (prev && prev.append) || 0 }, 'group');
+    s.delete('latest');
+  };
+  return get;
+});
 // aggiorna un solo vocale (es. la trascrizione) senza sovrascrivere ciò che nel frattempo è stato aggiunto
 function patchItem(id, fields) {
   return idb('readwrite', (s) => {
@@ -252,7 +261,32 @@ function selectItem(i) {
   $('player').src = objectUrl;
   if (duration) $('t-dur').textContent = fmtDur(duration);
 }
+let waitUntil = 0; // fino a quando l'app aspetta il prossimo vocale da aggiungere
+let waitTimer = 0;
+function renderWait() {
+  const waiting = waitUntil > Date.now();
+  show('waiting', waiting);
+  const canAdd = items.length < MAX_ITEMS && !(items.length === 1 && isRecording(items[0]));
+  show('add-more', !waiting && canAdd);
+  clearTimeout(waitTimer);
+  if (waiting) waitTimer = setTimeout(() => { waitUntil = 0; renderWait(); }, waitUntil - Date.now() + 50);
+}
+async function addMore() {
+  if (busy) return;
+  waitUntil = Date.now() + 10 * 60 * 1000;
+  try { await writeGroup(items, true, waitUntil); } catch { waitUntil = 0; setStatus('Non riesco a salvare: riprova.', true); return; }
+  renderWait();
+  const t = Date.now();
+  location.href = 'whatsapp://'; // apre WhatsApp: da lì tieni premuto il vocale e condividilo con VoiceBrief
+  setTimeout(() => { if (!document.hidden && Date.now() - t < 4000) setStatus('Apri WhatsApp, tieni premuto il vocale e condividilo con VoiceBrief.'); }, 1500);
+}
+async function cancelWait() {
+  waitUntil = 0;
+  try { await writeGroup(items, true, 0); } catch { /* ignora */ }
+  renderWait();
+}
 function renderGroup() {
+  renderWait();
   show('group', items.length > 1);
   $('clear').textContent = items.length > 1 ? 'Elimina tutti i vocali' : 'Elimina audio';
   $('pick-title').textContent = items.length > 1 ? 'Come vuoi elaborarli?' : 'Come vuoi elaborarlo?';
@@ -294,6 +328,8 @@ async function removeItem(id) {
   renderGroup();
 }
 
+$('add-more').onclick = addMore;
+$('wait-cancel').onclick = cancelWait;
 async function load(forced) {
   const shared = forced || new URLSearchParams(location.search).get('shared');
   let group;
@@ -330,15 +366,17 @@ async function load(forced) {
   const r = document.querySelector(`input[name=mode][value=${TITLES[last] ? last : 'bullets'}]`);
   r.checked = true;
   syncTone();
+  waitUntil = group && group.open && group.append > Date.now() && shared !== 'ok' ? group.append : 0;
   renderGroup();
   showView('pick');
   if (trimmed) setStatus('Limite di 10 minuti totali: l’ultimo vocale non è stato aggiunto.', true);
   else if (shared === 'full') setStatus(`Hai già ${MAX_ITEMS} vocali: elaborali o ricomincia.`, true);
   else if (shared === 'dup') setStatus('Questo vocale è già nell’elenco.');
+  else if (shared === 'new') setStatus('Nuovo vocale: ha sostituito il precedente.');
   else if (shared === 'ok') setStatus(items.length > 1 ? `Vocale aggiunto (${items.length} di ${MAX_ITEMS}).` : 'Vocale ricevuto.');
   else setStatus(shared === 'rec' ? 'Registrazione pronta.' : '');
   // appena arriva dalla condivisione parte la trascrizione, mentre scegli la modalità; errori ignorati (si ritenta con "Elabora")
-  if (shared === 'ok' || shared === 'rec') items.filter((i) => !i.text).forEach((i) => getTranscript(i).catch(() => {}));
+  if (shared === 'ok' || shared === 'new' || shared === 'rec') items.filter((i) => !i.text).forEach((i) => getTranscript(i).catch(() => {}));
 }
 
 // --- rete ---
