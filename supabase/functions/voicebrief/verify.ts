@@ -197,3 +197,22 @@ const SUMMARY_FILLER = new Set(["parla", "chiede", "propone", "dice", "racconta"
 export function maxSentencesFor(seconds: number): number {
   return Math.min(7, Math.max(2, Math.round(seconds / 12)));
 }
+
+// "Bella zio, ti va una cena con Matte e Testa?": chi riceve il vocale ("zio") è nominato solo come saluto, non è un invitato.
+// Si toglie da "Con chi" chi compare una sola volta, tra le prime parole del vocale.
+export function dropAddressee(who: string | null, text: string): string | null {
+  if (!who) return who;
+  const toks = tokens(text);
+  const head = new Set(toks.slice(0, 5));
+  const names = who.split(/\s*,\s*|\s+e\s+/).map((n) => n.trim()).filter(Boolean);
+  const kept = names.filter((n) => {
+    const t = tokens(n).filter((x) => !STOP.has(x));
+    if (t.length === 0) return true;
+    const first = t[0];
+    const count = toks.filter((x) => x === first).length;
+    return !(head.has(first) && count === 1);
+  });
+  if (kept.length === 0) return null;
+  if (kept.length === names.length) return who;
+  return kept.length === 1 ? kept[0] : kept.slice(0, -1).join(", ") + " e " + kept[kept.length - 1];
+}
