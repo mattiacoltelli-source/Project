@@ -36,8 +36,8 @@ const TRANSLATE_EN =
 const summaryPrompt = (max: number) =>
   `Scrivi un riassunto in prosa, in italiano (anche se il testo è in un'altra lingua), scorrevole e naturale, come lo racconteresti a voce a un amico. ` +
   `Scrivi al massimo ${max} frasi, brevi e chiare. ` +
-  `La prima frase dice subito il messaggio centrale: di cosa si tratta o cosa vuole chi parla. ` +
-  `Poi i dettagli che contano, solo se detti: chi, cosa, quando, dove (il luogo non va mai omesso), numeri e importi. ` +
+  `Segui l'ordine in cui le cose sono dette: non cercare un messaggio centrale e non dedurre lo scopo del vocale. ` +
+  `Riporta i dettagli che contano, solo se detti: chi, cosa, quando, dove (il luogo non va mai omesso), numeri e importi. ` +
   `Se chi parla fa una domanda o chiede qualcosa a chi ascolta, dillo in modo chiaro nell'ultima frase. ` +
   `Non iniziare ogni frase con "Chi parla": usa verbi senza soggetto ("Invita…", "Chiede…") o i nomi quando sono detti. ` +
   `Niente elenchi, niente titoli, niente introduzioni come "Il vocale dice". Non aggiungere commenti, opinioni o conclusioni tue, e non scrivere frasi su ciò che manca (es. \"non ci sono richieste\"). ` +
