@@ -7,6 +7,7 @@ const ORIGIN = "https://mattiacoltelli-source.github.io";
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_SECONDS = 10 * 60;
 const MAX_TEXT_CHARS = 60_000;
+const MAX_PARTS = 10;
 // tetto mensile ~1 EUR, in micro-USD (leggermente sotto 1 EUR per margine sul cambio)
 const CAP_MICRO_USD = Number(Deno.env.get("MONTHLY_CAP_MICRO_USD") ?? 1_050_000);
 const STT_MODEL = Deno.env.get("OPENAI_STT_MODEL") ?? "gpt-4o-mini-transcribe";
@@ -277,7 +278,12 @@ Deno.serve(async (req) => {
     const reqSecs = Number(body?.seconds);
     const secs = reqSecs > 0 && reqSecs <= 900 ? reqSecs : words / 2.5;
     const maxBullets = maxBulletsFor(secs);
-    const sysPrompt = (rewrite ? SYSTEM_BASE : SYSTEM) +
+    // più vocali della stessa chat, uniti in ordine cronologico e separati da una riga vuota
+    const parts = Math.min(MAX_PARTS, Math.max(1, Math.floor(Number(body?.parts)) || 1));
+    const partsNote = parts > 1 && (mode === "bullets" || mode === "summary")
+      ? ` Il testo è la trascrizione di ${parts} vocali consecutivi di una stessa chat, in ordine cronologico, separati da una riga vuota: riassumili come un'unica conversazione continua, senza elencare i vocali uno per uno e senza ripetizioni.`
+      : "";
+    const sysPrompt = (rewrite ? SYSTEM_BASE : SYSTEM) + partsNote +
       (mode === "bullets" ? bulletsPrompt(maxBullets) : mode === "summary" ? summaryPrompt(maxSentencesFor(secs)) : mode === "translate" && body?.target === "en" ? TRANSLATE_EN : MODES[mode]);
     const ask = async (temperature: number, extra = ""): Promise<string | null> => {
       const r = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -322,7 +328,7 @@ Deno.serve(async (req) => {
       // il testo riscritto aggiunge o cambia qualcosa (o è troppo corto): meglio la trascrizione originale
       out = text;
       outcome = "ok_cleanfail";
-      notice = "Non riesco a ripulirlo in modo sicuro: ti mostro la trascrizione originale.";
+      notice = "Non riesco a pulirlo in modo sicuro: ti mostro la trascrizione originale.";
     }
     return done(200, outcome, { result: out, notice });
   } catch (e) {

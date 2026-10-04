@@ -7,10 +7,13 @@ const safeLS = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignora */ } },
 };
 
-let entry = null;        // file ricevuto (da IndexedDB)
-let duration = null;     // secondi, dai metadati del player
-let transcript = null;   // solo in memoria: cambiare modalità non richiama l'STT
-let eventInfo;           // impegni estratti: undefined = non ancora chiesti, [] = nessuno
+const MAX_ITEMS = 10;                 // vocali per gruppo
+const MAX_TOTAL_SECONDS = 10 * 60;    // durata totale del gruppo
+let items = [];          // vocali del gruppo in ordine cronologico (da IndexedDB)
+let curIdx = 0;          // vocale caricato nel player
+let duration = null;     // secondi del vocale nel player
+const jobs = new Map();    // id -> richiesta di trascrizione in corso
+const evCache = new Map(); // id -> impegni estratti ([] = nessuno), solo in memoria
 let objectUrl = null;
 let busy = false;
 
@@ -32,6 +35,68 @@ async function idb(mode, fn) {
       tx.onerror = () => reject(tx.error);
     });
   } finally { db.close(); }
+}
+
+// gruppo di vocali: { items, open, updated } sotto la chiave 'group' (compatibile col vecchio 'latest')
+async function readGroup() {
+  const g = await idb('readonly', (s) => s.get('group'));
+  if (g && Array.isArray(g.items)) return g;
+  const old = await idb('readonly', (s) => s.get('latest'));
+  if (old) return { items: [{ id: 'old', ...old }], open: false, updated: old.receivedAt || Date.now() };
+  return null;
+}
+const writeGroup = (list, open) => idb('readwrite', (s) => { s.put({ items: list, open, updated: Date.now() }, 'group'); s.delete('latest'); });
+// aggiorna un solo vocale (es. la trascrizione) senza sovrascrivere ciò che nel frattempo è stato aggiunto
+function patchItem(id, fields) {
+  return idb('readwrite', (s) => {
+    const get = s.get('group');
+    get.onsuccess = () => {
+      const g = get.result;
+      const it = g && g.items.find((i) => i.id === id);
+      if (it) { Object.assign(it, fields); s.put(g, 'group'); }
+    };
+    return get;
+  });
+}
+
+// ordine cronologico dai nomi WhatsApp (PTT-20261003-WA0007 / WhatsApp Ptt 2026-10-03 at 14.22.11); gli altri in fondo, nell'ordine di arrivo
+function chronoKey(it) {
+  const name = it.name || '';
+  let m = /(20\d{2})(\d{2})(\d{2})-WA(\d+)/i.exec(name);
+  if (m) return [Number(m[1] + m[2] + m[3]), Number(m[4])];
+  m = /(20\d{2})-(\d{2})-(\d{2}) at (\d{2})\.(\d{2})\.(\d{2})/i.exec(name);
+  if (m) return [Number(m[1] + m[2] + m[3]), Number(m[4]) * 3600 + Number(m[5]) * 60 + Number(m[6])];
+  return null;
+}
+function sortItems(list) {
+  const keyed = [], plain = [];
+  list.forEach((it, i) => { const k = chronoKey(it); (k ? keyed : plain).push({ it, k, i }); });
+  keyed.sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i);
+  plain.sort((a, b) => (a.it.receivedAt || 0) - (b.it.receivedAt || 0) || a.i - b.i);
+  return [...keyed, ...plain].map((x) => x.it);
+}
+const itemDate = (it) => {
+  const m = /(20\d{2})-?(\d{2})-?(\d{2})/.exec(it.name || '');
+  if (!m) return '';
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  return d.getMonth() === +m[2] - 1 ? new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short' }).format(d) : '';
+};
+const totalSeconds = () => items.reduce((n, i) => n + (i.duration || 0), 0);
+function probeDuration(blob) { // durata di un file (per l'elenco e il limite totale)
+  return new Promise((res) => {
+    const a = new Audio();
+    const u = URL.createObjectURL(blob);
+    const t = setTimeout(() => done(null), 4000);
+    function done(v) { clearTimeout(t); a.removeAttribute('src'); URL.revokeObjectURL(u); res(v); }
+    a.preload = 'metadata';
+    a.onloadedmetadata = () => {
+      if (isFinite(a.duration) && a.duration > 0) done(a.duration);
+      else if (a.duration === Infinity) { a.ontimeupdate = () => done(isFinite(a.duration) ? a.duration : null); a.currentTime = 1e101; }
+      else done(null);
+    };
+    a.onerror = () => done(null);
+    a.src = u;
+  });
 }
 
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
@@ -135,35 +200,103 @@ function renderResult(mode, text) {
 // registrazione fatta nell'app (nome 'registrazione-…'): la traduzione va in inglese, per scrivere a qualcuno in inglese
 const isRecording = (e) => !!e && /^registrazione-/.test(e.name || '');
 
+function selectItem(i) {
+  curIdx = i;
+  const it = items[i];
+  duration = it.duration || null;
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(it.blob);
+  resetPlayer();
+  duration = it.duration || null;
+  $('player').src = objectUrl;
+  if (duration) $('t-dur').textContent = fmtDur(duration);
+}
+function renderGroup() {
+  show('group', items.length > 1);
+  $('clear').textContent = items.length > 1 ? 'Elimina tutti i vocali' : 'Elimina audio';
+  $('pick-title').textContent = items.length > 1 ? 'Come vuoi elaborarli?' : 'Come vuoi elaborarlo?';
+  if (items.length < 2) return;
+  $('group-count').textContent = `${items.length} di ${MAX_ITEMS}`;
+  $('group-total').textContent = fmtDur(totalSeconds());
+  const list = $('group-list');
+  list.textContent = '';
+  items.forEach((it, i) => {
+    const li = document.createElement('li');
+    li.className = 'g-row' + (i === curIdx ? ' on' : '');
+    const main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'g-main';
+    const d = itemDate(it);
+    main.textContent = `Vocale ${i + 1}` + (d ? ` · ${d}` : '');
+    main.onclick = () => { selectItem(i); renderGroup(); };
+    const dur = document.createElement('span');
+    dur.className = 'g-dur';
+    dur.textContent = it.duration ? fmtDur(it.duration) : '–:––';
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'g-x';
+    x.textContent = '×';
+    x.setAttribute('aria-label', `Togli il vocale ${i + 1}`);
+    x.onclick = () => removeItem(it.id);
+    li.append(main, dur, x);
+    list.appendChild(li);
+  });
+}
+async function removeItem(id) {
+  if (busy) return;
+  items = items.filter((i) => i.id !== id);
+  jobs.delete(id);
+  evCache.delete(id);
+  if (!items.length) return clearAll();
+  try { await writeGroup(items, true); } catch { /* resta in memoria */ }
+  selectItem(Math.min(curIdx, items.length - 1));
+  renderGroup();
+}
+
 async function load(forced) {
   const shared = forced || new URLSearchParams(location.search).get('shared');
-  try { entry = await idb('readonly', (s) => s.get('latest')); } catch (e) { setStatus('Errore IndexedDB: ' + e, true); return; }
+  let group;
+  try { group = await readGroup(); } catch (e) { setStatus('Errore IndexedDB: ' + e, true); return; }
   history.replaceState(null, '', location.pathname);
   if (shared === 'nofile') setStatus('Condivisione ricevuta ma senza file audio.', true);
   if (shared === 'error') setStatus('Errore nel leggere il file condiviso.', true);
 
-  if (!entry) {
+  items = group ? sortItems(group.items) : [];
+  const ids = new Set(items.map((i) => i.id));
+  for (const id of [...jobs.keys()]) if (!ids.has(id)) jobs.delete(id);
+  for (const id of [...evCache.keys()]) if (!ids.has(id)) evCache.delete(id);
+  if (!items.length) {
+    show('group', false);
     showView('idle');
     return;
   }
-  transcript = null;
-  transcriptJob = null;
-  eventInfo = undefined;
-  duration = entry.duration || null; // registrazioni: durata nota dal timer (il webm di MediaRecorder non la dichiara)
-  if (objectUrl) URL.revokeObjectURL(objectUrl);
-  objectUrl = URL.createObjectURL(entry.blob);
-  resetPlayer();
-  $('player').src = objectUrl;
-  if (duration) $('t-dur').textContent = fmtDur(duration);
-  const isRec = isRecording(entry);
+  // durata di ogni vocale (serve all'elenco e al limite totale); se si supera il limite si toglie l'ultimo arrivato
+  let dirty = false;
+  await Promise.all(items.filter((i) => !i.duration).map(async (i) => { const d = await probeDuration(i.blob); if (d) { i.duration = d; dirty = true; } }));
+  let trimmed = false;
+  while (items.length > 1 && totalSeconds() > MAX_TOTAL_SECONDS) {
+    let k = 0;
+    items.forEach((it, i) => { if ((it.receivedAt || 0) >= (items[k].receivedAt || 0)) k = i; });
+    items.splice(k, 1);
+    trimmed = true;
+  }
+  if (dirty || trimmed) { try { await writeGroup(items, group.open); } catch { /* ignora */ } }
+  curIdx = 0;
+  selectItem(0);
+  const isRec = items.length === 1 && isRecording(items[0]);
   $('tr-sub').textContent = isRec ? 'In inglese' : 'Sempre in italiano';
   const last = safeLS.get('vb_mode') || 'bullets';
   const r = document.querySelector(`input[name=mode][value=${TITLES[last] ? last : 'bullets'}]`);
   r.checked = true;
+  renderGroup();
   showView('pick');
-  setStatus(shared === 'ok' ? 'Vocale ricevuto.' : shared === 'rec' ? 'Registrazione pronta.' : '');
+  if (trimmed) setStatus('Limite di 10 minuti totali: l’ultimo vocale non è stato aggiunto.', true);
+  else if (shared === 'full') setStatus(`Hai già ${MAX_ITEMS} vocali: elaborali o ricomincia.`, true);
+  else if (shared === 'dup') setStatus('Questo vocale è già nell’elenco.');
+  else if (shared === 'ok') setStatus(items.length > 1 ? `Vocale aggiunto (${items.length} di ${MAX_ITEMS}).` : 'Vocale ricevuto.');
+  else setStatus(shared === 'rec' ? 'Registrazione pronta.' : '');
   // appena arriva dalla condivisione parte la trascrizione, mentre scegli la modalità; errori ignorati (si ritenta con "Elabora")
-  if (shared === 'ok' || shared === 'rec') getTranscript().catch(() => {});
+  if (shared === 'ok' || shared === 'rec') items.filter((i) => !i.text).forEach((i) => getTranscript(i).catch(() => {}));
 }
 
 // --- rete ---
@@ -188,41 +321,40 @@ async function api(init) {
   return data;
 }
 
-function normalizedFile() {
-  const ogg = /\.(opus|ogg|oga)$/i.test(entry.name || '') || /^audio\/(ogg|opus)/i.test(entry.type || '');
-  if (ogg) return new File([entry.blob], 'audio.ogg', { type: 'audio/ogg' });
-  return new File([entry.blob], entry.name || 'audio', { type: (entry.type || '').split(';')[0] });
+function normalizedFile(it) {
+  const ogg = /\.(opus|ogg|oga)$/i.test(it.name || '') || /^audio\/(ogg|opus)/i.test(it.type || '');
+  if (ogg) return new File([it.blob], 'audio.ogg', { type: 'audio/ogg' });
+  return new File([it.blob], it.name || 'audio', { type: (it.type || '').split(';')[0] });
 }
 
-// la trascrizione può partire in anticipo (appena arriva il vocale): una sola richiesta, riusata da "Elabora"
-let transcriptJob = null;
-function getTranscript() {
-  if (transcript !== null) return Promise.resolve(transcript);
-  if (!transcriptJob) {
-    const mine = entry;
-    const job = (async () => {
-      if (mine.size > MAX_BYTES) throw new ApiError('too_big', 'Audio oltre 10 MB.');
-      if (duration && duration > MAX_SECONDS) throw new ApiError('too_long', 'Audio oltre 10 minuti.');
-      const fd = new FormData();
-      fd.append('audio', normalizedFile());
-      const data = await api({ method: 'POST', body: fd });
-      if (!data.text) throw new ApiError('empty', 'Nessun parlato riconosciuto nell’audio.');
-      if (entry === mine) transcript = data.text; // se nel frattempo è arrivato un altro vocale, scarta
-      return data.text;
-    })().finally(() => { if (transcriptJob === job) transcriptJob = null; });
-    transcriptJob = job;
-  }
-  return transcriptJob;
+// la trascrizione può partire in anticipo (appena arriva il vocale): una sola richiesta per vocale, salvata sul telefono
+function getTranscript(it) {
+  if (it.text) return Promise.resolve(it.text);
+  let job = jobs.get(it.id);
+  if (job) return job;
+  job = (async () => {
+    if (it.size > MAX_BYTES) throw new ApiError('too_big', 'Audio oltre 10 MB.');
+    if (it.duration && it.duration > MAX_SECONDS) throw new ApiError('too_long', 'Audio oltre 10 minuti.');
+    const fd = new FormData();
+    fd.append('audio', normalizedFile(it));
+    const data = await api({ method: 'POST', body: fd });
+    if (!data.text) throw new ApiError('empty', 'Nessun parlato riconosciuto nell’audio.');
+    it.text = data.text;
+    patchItem(it.id, { text: data.text }).catch(() => {});
+    return data.text;
+  })().finally(() => { if (jobs.get(it.id) === job) jobs.delete(it.id); });
+  jobs.set(it.id, job);
+  return job;
 }
 
-// appuntamento (dove/quando/con chi): chiamata leggera, mai bloccante
-async function getEvent(text) {
-  if (eventInfo !== undefined) return eventInfo;
+// appuntamento (dove/quando/con chi): chiamata leggera, mai bloccante; uno per vocale, con la data di quel vocale
+async function getEvent(it, text) {
+  if (evCache.has(it.id)) return evCache.get(it.id);
   try {
     const data = await api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ step: 'event', text }) });
-    eventInfo = Array.isArray(data.events) ? data.events : (data.event ? [data.event] : []);
+    evCache.set(it.id, Array.isArray(data.events) ? data.events : (data.event ? [data.event] : []));
   } catch { return null; } // non salvo l'errore: riprova alla prossima elaborazione
-  return eventInfo;
+  return evCache.get(it.id);
 }
 
 // --- data esatta per "domani", "sabato", ... (calcolata qui, non dal modello) ---
@@ -230,13 +362,13 @@ const DAYS = ['domenica', 'lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi'
 const noAccents = (s) => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
 const EXPLICIT_DATE = /\d{1,2}\s*(\/|-)\s*\d{1,2}|\d{1,2}\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)/i;
 // giorno in cui il vocale è stato inviato: dal nome WhatsApp (PTT-20261003-...), altrimenti dalla ricezione
-function referenceDate() {
-  const m = /(20\d{2})(\d{2})(\d{2})/.exec((entry && entry.name) || '');
+function referenceDate(it) {
+  const m = /(20\d{2})(\d{2})(\d{2})/.exec((it && it.name) || '');
   if (m) {
     const d = new Date(+m[1], +m[2] - 1, +m[3]);
     if (d.getMonth() === +m[2] - 1 && d.getDate() === +m[3]) return d;
   }
-  const r = new Date((entry && entry.receivedAt) || Date.now());
+  const r = new Date((it && it.receivedAt) || Date.now());
   return new Date(r.getFullYear(), r.getMonth(), r.getDate());
 }
 function resolveDay(text, ref) {
@@ -302,15 +434,19 @@ function evValue(k, v) {
   if (k === 'party') return v.replace(/^per\s+/i, '');
   return v;
 }
-// una card per impegno (max 3); le righe mancanti non esistono proprio
+// una card per impegno (max 5 in tutto); le righe mancanti non esistono proprio. Ogni impegno ha la data di riferimento del suo vocale
 function renderEvents(list) {
   const box = $('events');
   box.textContent = '';
-  const ref = referenceDate();
   let n = 0;
-  for (const ev of list || []) {
+  const seen = new Set();
+  for (const { ev, ref } of list || []) {
+    if (n >= 5) break;
     const rows = EV_FIELDS.filter(([k]) => ev[k]);
     if (!rows.length) continue;
+    const key = [ev.what, ev.when, ev.where].join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
     const card = $('ev-tpl').content.firstElementChild.cloneNode(true);
     const title = ev.kind === 'booking' ? 'Prenotazione' : 'Appuntamento';
     card.querySelector('.ev-title').textContent = title;
@@ -346,26 +482,37 @@ async function run() {
   setStatus('');
   $('ws-2').hidden = mode === 'full';
   $('ws-2-label').textContent = SUM_LABELS[mode] || '';
-  setStep(1, transcript !== null ? 'done' : 'active');
-  setStep(2, transcript !== null && mode !== 'full' ? 'active' : 'pending');
+  const allDone = items.every((i) => i.text);
+  setStep(1, allDone ? 'done' : 'active');
+  setStep(2, allDone && mode !== 'full' ? 'active' : 'pending');
   showView('working');
   history.pushState({ v: 'working' }, '');
+  writeGroup(items, false).catch(() => {}); // il gruppo si chiude: la prossima condivisione ne apre uno nuovo
   try {
-    const text = await getTranscript();
+    // una trascrizione fallita non blocca le altre
+    const settled = await Promise.allSettled(items.map((it) => getTranscript(it)));
     if (cancelled) throw new ApiError('cancelled', '');
+    const good = items.map((it, i) => ({ it, i, text: settled[i].status === 'fulfilled' ? settled[i].value : null })).filter((x) => x.text);
+    const failed = items.length - good.length;
+    if (!good.length) throw (settled.find((r) => r.status === 'rejected') || {}).reason || new ApiError('empty', 'Nessun parlato riconosciuto.');
     setStep(1, 'done');
     if (mode !== 'full') setStep(2, 'active');
+    const multi = good.length > 1;
+    const combined = good.map((x) => x.text).join('\n\n');
     let notice = '';
-    const [out, ev] = await Promise.all([
-      mode === 'full' ? text : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text, seconds: duration || undefined, target: isRecording(entry) ? 'en' : 'it' }) }).then((d) => { notice = d.notice || ''; return d.result; }),
-      getEvent(text),
+    const [out, evs] = await Promise.all([
+      mode === 'full'
+        ? (multi ? good.map((x) => `Vocale ${x.i + 1}${itemDate(x.it) ? ' · ' + itemDate(x.it) : ''}\n${x.text}`).join('\n\n') : good[0].text)
+        : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text: combined, seconds: totalSeconds() || undefined, parts: multi ? good.length : undefined, target: items.length === 1 && isRecording(items[0]) ? 'en' : 'it' }) }).then((d) => { notice = d.notice || ''; return d.result; }),
+      Promise.all(good.map((x) => getEvent(x.it, x.text))),
     ]);
     if (cancelled) throw new ApiError('cancelled', '');
     renderResult(mode, out || '(risultato vuoto)');
-    renderEvents(ev);
+    renderEvents(good.flatMap((x, k) => (evs[k] || []).map((ev) => ({ ev, ref: referenceDate(x.it) }))));
     show('share', !!navigator.share);
     showView('result');
     history.replaceState({ v: 'result' }, '');
+    if (failed) notice = (notice ? notice + ' ' : '') + (failed === 1 ? '1 vocale non è stato trascritto.' : `${failed} vocali non sono stati trascritti.`);
     setStatus(notice);
   } catch (e) {
     showView('pick');
@@ -392,7 +539,7 @@ window.addEventListener('popstate', () => {
   if (ignorePop) { ignorePop = false; return; }
   if (rec) { cancelRecording(); return; } // indietro durante la registrazione = annulla
   if (busy) { cancelRun(); return; } // indietro durante l'elaborazione = annulla
-  if (!entry) return showView('idle');
+  if (!items.length) return showView('idle');
   $('go').textContent = 'Elabora';
   showView(history.state && history.state.v === 'result' ? 'result' : 'pick');
 });
@@ -452,7 +599,7 @@ async function finishRecording() {
   const secs = Math.min(REC_MAX, (Date.now() - r.start) / 1000);
   const blob = new Blob(r.chunks, { type: r.mime || 'audio/webm' });
   await popHistory();
-  const back = () => showView(entry ? 'pick' : 'idle');
+  const back = () => showView(items.length ? 'pick' : 'idle');
   if (r.cancelled) { back(); return; }
   if (secs < 1 || blob.size < 1000) { back(); setStatus('Registrazione troppo breve.', true); return; }
   const ext = /mp4/i.test(blob.type) ? 'm4a' : /ogg/i.test(blob.type) ? 'ogg' : 'webm';
@@ -460,7 +607,7 @@ async function finishRecording() {
   const p2 = (n) => String(n).padStart(2, '0');
   const name = `registrazione-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.${ext}`;
   try {
-    await idb('readwrite', (s) => s.put({ blob, name, type: blob.type, size: blob.size, receivedAt: Date.now(), duration: secs }, 'latest'));
+    await writeGroup([{ id: crypto.randomUUID(), blob, name, type: blob.type, size: blob.size, receivedAt: Date.now(), duration: secs }], false);
   } catch { back(); setStatus('Non riesco a salvare la registrazione.', true); return; }
   await load('rec');
   if (r.interrupted) setStatus('Registrazione interrotta: ho tenuto la parte registrata.');
@@ -476,15 +623,19 @@ $('copy').onclick = async () => {
 $('share').onclick = async () => {
   try { await navigator.share({ text: lastOutput }); } catch { /* annullato */ }
 };
-$('clear').onclick = async () => {
-  await idb('readwrite', (s) => s.delete('latest'));
-  entry = null; transcript = null; eventInfo = undefined;
+async function clearAll() {
+  await idb('readwrite', (s) => { s.delete('group'); s.delete('latest'); });
+  items = [];
+  jobs.clear();
+  evCache.clear();
   pausePlayer();
   player.removeAttribute('src');
   resetPlayer();
+  show('group', false);
   showView('idle');
   setStatus('Audio eliminato.');
-};
+}
+$('clear').onclick = () => { if (!busy) clearAll(); };
 // --- invito a installare (solo chi apre il link da browser) ---
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);

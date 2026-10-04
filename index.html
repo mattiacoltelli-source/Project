@@ -82,8 +82,13 @@
         </div>
         <audio id="player" preload="auto"></audio>
       </div>
+      <div id="group" class="group" hidden>
+        <div class="g-head"><b>Vocali aggiunti</b><span><span id="group-count"></span> · <span id="group-total"></span></span></div>
+        <ol id="group-list" class="g-list"></ol>
+        <p class="g-hint">Per aggiungerne un altro, condividilo da WhatsApp con VoiceBrief. Vengono ordinati per data. Funziona meglio se sono tutti della stessa persona.</p>
+      </div>
 
-      <h1>Come vuoi elaborarlo?</h1>
+      <h1 id="pick-title">Come vuoi elaborarlo?</h1>
       <div id="modes" class="modes" role="radiogroup" aria-label="Modalità">
         <label class="mode">
           <input type="radio" name="mode" value="bullets">

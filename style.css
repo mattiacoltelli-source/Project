@@ -129,3 +129,16 @@ li[data-state=done] .w-done { display: block; }
 .banner.install { background: #e8f5f3; color: #12201e; font-size: 14px; }
 .banner.install span { flex: 1; }
 .banner.install .x { min-height: 40px; min-width: 40px; padding: 0; background: transparent; color: var(--deep); font-size: 24px; line-height: 1; }
+
+/* più vocali insieme */
+.group { margin-top: 16px; padding: 12px 14px; border-radius: 18px; background: var(--soft); }
+.g-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; color: #4d6965; }
+.g-head b { color: #12201e; font-size: 15px; }
+.g-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.g-row { display: flex; align-items: center; gap: 4px; border-top: 1px solid #e1eae8; }
+.g-row:first-child { border-top: 0; }
+.g-main { flex: 1; min-height: 44px; padding: 0; border: 0; background: none; text-align: left; font: inherit; font-size: 15px; color: #12201e; }
+.g-row.on .g-main { font-weight: 700; color: var(--deep); }
+.g-dur { font-size: 13px; color: #4d6965; }
+.g-x { width: 44px; height: 44px; border: 0; background: none; color: #4d6965; font-size: 22px; line-height: 1; }
+.g-hint { margin: 8px 0 0; font-size: 12px; color: #6d8480; }
