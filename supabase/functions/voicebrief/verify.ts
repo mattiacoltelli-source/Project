@@ -93,7 +93,7 @@ export function maxBulletsFor(seconds: number): number {
 }
 
 // "cosa" troppo generico ("ci vediamo", "incontro") non informa: lo si scarta
-const GENERIC_WHAT = new Set(["ci", "vediamo", "vediamoci", "troviamo", "troviamoci", "incontriamo", "sentiamo", "vado", "andiamo", "facciamo", "incontro", "appuntamento", "evento", "cosa", "mangiare", "cenare", "pranzare", "uscire", "venire", "andare", "passare", "trovarci", "vederci", "vedersi", "incontrarci", "incontrarsi", "mangiamo", "andiamo", "usciamo"]);
+const GENERIC_WHAT = new Set(["ci", "vediamo", "vediamoci", "troviamo", "troviamoci", "incontriamo", "sentiamo", "vado", "andiamo", "facciamo", "incontro", "appuntamento", "evento", "cosa"]);
 export function isGenericWhat(v: string | null): boolean {
   if (!v) return true;
   const toks = tokens(v).filter((t) => !STOP.has(t));
