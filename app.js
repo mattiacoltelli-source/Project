@@ -277,8 +277,6 @@ function addMore(e) {
   waitUntil = Date.now() + 10 * 60 * 1000;
   writeGroup(items, true, waitUntil).catch(() => {});
   setTimeout(renderWait, 300); // dopo, così il tocco non perde il suo link
-  const t = Date.now();
-  setTimeout(() => { if (!document.hidden && Date.now() - t < 4000) setStatus('Se WhatsApp non si è aperto, aprilo tu: tieni premuto il vocale e condividilo con VoiceBrief.'); }, 1500);
 }
 async function cancelWait() {
   waitUntil = 0;
@@ -329,6 +327,7 @@ async function removeItem(id) {
 }
 
 $('add-more').onclick = addMore;
+$('wait-open').onclick = () => { waitUntil = Date.now() + 10 * 60 * 1000; writeGroup(items, true, waitUntil).catch(() => {}); }; // rinnova l'attesa e riapre WhatsApp
 $('wait-cancel').onclick = cancelWait;
 async function load(forced) {
   const shared = forced || new URLSearchParams(location.search).get('shared');
