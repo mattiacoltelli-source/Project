@@ -257,9 +257,48 @@ function resolveDay(text, ref) {
 }
 
 const EV_FIELDS = [['what', 'Cosa'], ['when', 'Quando'], ['where', 'Dove'], ['party', 'Per'], ['who', 'Con chi']];
-// solo formattazione, nessuna deduzione: "20" -> "alle 20"; "per quattro" -> "quattro" (l'etichetta è già "Per")
+// --- orari: solo formattazione ("alle venti" / "alle 20" / "alle otto e mezza" -> "alle 20:00" / "alle 8:30"), nessuna deduzione ---
+const UNITS_IT = { zero: 0, uno: 1, una: 1, un: 1, due: 2, tre: 3, quattro: 4, cinque: 5, sei: 6, sette: 7, otto: 8, nove: 9 };
+const TEENS_IT = { dieci: 10, undici: 11, dodici: 12, tredici: 13, quattordici: 14, quindici: 15, sedici: 16, diciassette: 17, diciotto: 18, diciannove: 19 };
+const TENS_IT = { venti: 20, trenta: 30, quaranta: 40, cinquanta: 50 };
+function numIT(w) { // "20" | "venti" | "ventidue" | "trentacinque" -> numero, altrimenti null
+  w = noAccents(w);
+  if (/^\d{1,2}$/.test(w)) return Number(w);
+  if (w in UNITS_IT) return UNITS_IT[w];
+  if (w in TEENS_IT) return TEENS_IT[w];
+  for (const [t, v] of Object.entries(TENS_IT)) {
+    if (w === t) return v;
+    for (const [u, n] of Object.entries(UNITS_IT)) {
+      if (n > 0 && (w === t + u || ((u === 'uno' || u === 'otto') && w === t.slice(0, -1) + u))) return v + n;
+    }
+  }
+  return null;
+}
+const pad2 = (n) => String(n).padStart(2, '0');
+function formatTimes(text) {
+  let out = text.replace(/\ball['’]\s*una\b/gi, 'alle 1');
+  // "alle|ore" + ora (cifre o parole) + eventuali minuti ("18:30", "18.30", "e mezza", "e un quarto", "e 30")
+  out = out.replace(/\b(alle|dalle|ore)\s+(?:ore\s+)?(\d{1,2})[:.](\d{2})\b/gi, (m, p, h, mi) => (Number(h) <= 24 && Number(mi) < 60 ? `${p} ${Number(h)}:${mi}` : m));
+  out = out.replace(/\b(alle|dalle|ore)\s+(?:ore\s+)?([\p{L}\d]+)(?:\s+e\s+(mezza|mezzo|un quarto|[\p{L}\d]+))?(?![\p{L}\d:.])/giu, (m, p, hw, mw) => {
+    const h = numIT(hw);
+    if (h === null || h > 24) return m;
+    let mi = 0, used = true;
+    if (mw) {
+      const w = noAccents(mw);
+      if (w === 'mezza' || w === 'mezzo') mi = 30;
+      else if (w === 'un quarto') mi = 15;
+      else { const n = numIT(w); if (n !== null && n < 60 && (w.length > 2 || /^\d{2}$/.test(w))) mi = n; else used = false; }
+    }
+    return `${p} ${h}:${pad2(mi)}` + (mw && !used ? ' e ' + mw : '');
+  });
+  return out;
+}
+// solo formattazione, nessuna deduzione: "20" -> "alle 20:00"; "per quattro" -> "quattro" (l'etichetta è già "Per")
 function evValue(k, v) {
-  if (k === 'when' && /^\d{1,2}([:.]\d{2})?$/.test(v)) return 'alle ' + v;
+  if (k === 'when') {
+    if (/^\d{1,2}([:.]\d{2})?$/.test(v)) v = 'alle ' + v;
+    return formatTimes(v);
+  }
   if (k === 'party') return v.replace(/^per\s+/i, '');
   return v;
 }
