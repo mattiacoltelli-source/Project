@@ -1,5 +1,5 @@
 // node --experimental-strip-types supabase/functions/voicebrief/verify.test.mjs
-import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere, usefulEvent, summaryFaithful, dropEmptyClaims, isItalianText, maxSentencesFor } from "./verify.ts";
+import { tokens, supported, isBooked, isPastRef, briefSupported, splitBrief, capBullets, maxBulletsFor, isGenericWhat, cleanFaithful, sameAsWhere, usefulEvent, stripPlace, summaryFaithful, dropEmptyClaims, isItalianText, maxSentencesFor } from "./verify.ts";
 const T = (s) => new Set(tokens(s));
 const t1 = "Oh allora sabato ci vediamo alle 8, però prima devo passare da Marco a prendere la macchina, quindi magari facciamo direttamente davanti al ristorante da Gigi.";
 const cases = [
@@ -94,5 +94,7 @@ for (const [w, exp] of [["duemila", "2000"], ["venticinque", "25"], ["trentuno",
   if (!summaryFaithful("Chi parla ha finito ieri sera una serie che trova bellissima. Racconta di un gruppo di amici che negli anni Novanta aprono un locale sul mare, tra litigi, separazioni e ritrovi. Il cast è molto bravo e la colonna sonora è fantastica. Sono dieci episodi da cinquanta minuti, e consiglia a chi ascolta di guardarla.", t4)) { bad++; console.log("FAIL summaryFaithful parafrasi"); }
   if (summaryFaithful("Chi parla ha finito ieri sera una serie girata a Roma da Netflix. Sono dieci episodi da cinquanta minuti.", t4)) { bad++; console.log("FAIL summaryFaithful nome inventato"); } }
 if (dropEmptyClaims("Chi parla racconta una giornata tranquilla. Non ci sono richieste specifiche nel messaggio.") !== "Chi parla racconta una giornata tranquilla.") { bad++; console.log("FAIL dropEmptyClaims"); }
+for (const [w, d, exp] of [["mangiare da Nonna Rosa", "da Nonna Rosa", "mangiare"], ["partita di paddle", "circolo Aurora", "partita di paddle"], ["cena al ristorante Gigi", "ristorante Gigi", "cena"], ["Nonna Rosa", "da Nonna Rosa", null]]) { const got = stripPlace(w, d); if (got !== exp) { bad++; console.log("FAIL stripPlace", w, got); } }
+if (!isGenericWhat(stripPlace("mangiare da Nonna Rosa", "da Nonna Rosa"))) { bad++; console.log("FAIL mangiare generico"); }
 console.log(bad ? `${bad} falliti` : "tutti ok");
 process.exit(bad ? 1 : 0);
