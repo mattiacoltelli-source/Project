@@ -1,7 +1,7 @@
 // VoiceBrief: audio -> testo (STT OpenAI) -> riassunto (LLM OpenAI).
 // Segreto (Supabase secrets): OPENAI_API_KEY. Nessun contenuto viene salvato o loggato.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, stripPlace, dropAddressee, usefulEvent, summaryFaithful, dropEmptyClaims, maxSentencesFor, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
+import { briefSupported, capBullets, cleanFaithful, isBooked, isGenericWhat, isPastRef, sameAsWhere, stripPlace, dropAddressee, usefulEvent, summaryFaithful, dropEmptyClaims, parseComment, safeComments, maxSentencesFor, maxBulletsFor, splitBrief, supported, tokens } from "./verify.ts";
 
 const ORIGIN = "https://mattiacoltelli-source.github.io";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -20,6 +20,7 @@ const LLM_OUT_MICRO_PER_TOKEN = 0.6 * 1.3;
 const MODES: Record<string, string> = {
   bullets: "", // costruito da bulletsPrompt (dipende dalla durata)
   summary: "", // costruito da summaryPrompt (dipende dalla durata)
+  comment: "", // costruito da commentPrompt (durata e tono)
   clean:
     "Task: rewrite the text as a clean message ready to send, IN THE SAME LANGUAGE AS THE TEXT (English text -> English output, Italian text -> Italian output; never translate). " +
     "Remove fillers and hesitations (um, uh, like, you know, ehm, cioè, tipo, allora...), repetitions and false starts; fix punctuation and capitalization; start a new line between different topics. " +
@@ -41,6 +42,16 @@ const summaryPrompt = (max: number) =>
   `Non iniziare ogni frase con "Chi parla": usa verbi senza soggetto ("Invita…", "Chiede…") o i nomi quando sono detti. ` +
   `Niente elenchi, niente titoli, niente introduzioni come "Il vocale dice". Non aggiungere commenti, opinioni o conclusioni tue, e non scrivere frasi su ciò che manca (es. \"non ci sono richieste\"). ` +
   `Se il testo è confuso o parte a metà, riassumi solo ciò che è chiaro.`;
+// modello più forte per il tono "pungente" (l'umorismo con il modello economico è scialbo); se non risponde si ripiega su quello normale
+const FUN_MODEL = Deno.env.get("OPENAI_FUN_MODEL") ?? "gpt-4o";
+const FUN_COST_X = 17; // gpt-4o costa circa 17 volte gpt-4o-mini
+const commentPrompt = (max: number, tone: string) =>
+  summaryPrompt(max) +
+  ` (Il divieto di commenti e opinioni vale per il riassunto: i commenti vanno solo nella sezione finale.) Dopo il riassunto lascia una riga vuota, poi scrivi la riga "Commento:" e subito sotto da 1 a 3 righe che iniziano con "- ", una frase ciascuna, in italiano. ` +
+  (tone === "sharp"
+    ? `I commenti sono ironici e pungenti ma bonari: prendi in giro ciò che viene detto (le affermazioni, l'esagerazione, la lunghezza, i giri di parole), MAI la persona o le sue caratteristiche. Niente insulti, volgarità, offese a gruppi o a categorie. Battute brevi e riconoscibili, senza spiegarle. `
+    : `I commenti sono seri ed equilibrati: fai notare le ipotesi su cui poggia il discorso, cosa manca o cosa varrebbe la pena verificare. Su politica e temi controversi resta neutrale e non schierarti. Non dare consigli finanziari, legali o medici e non fare previsioni. `) +
+  `I commenti NON introducono fatti nuovi: niente cifre, date, nomi di persone, aziende o luoghi che non sono nel vocale. Se non hai nulla di sensato da commentare, scrivi un solo commento breve e generico.`;
 const bulletsPrompt = (max: number) =>
   `Riassumi il testo in punti elenco BREVI (una riga ciascuno, una sola idea), SEMPRE IN ITALIANO anche se il testo è in un'altra lingua. ` +
   `Al massimo ${max} punti: se servono di più, unisci le idee molto vicine. ` +
@@ -266,12 +277,15 @@ Deno.serve(async (req) => {
     if (!Object.hasOwn(MODES, mode)) return done(400, "bad_mode", { error: "bad_mode", message: "Modalità non valida." });
     if (!text.trim() || text.length > MAX_TEXT_CHARS) return done(400, "bad_text", { error: "bad_text", message: "Testo non valido." });
     // vocale cortissimo: riassumerlo non serve (e costa), si mostra il testo com'è
-    if ((mode === "bullets" || mode === "summary") && text.trim().split(/\s+/).length < 15) {
+    if ((mode === "bullets" || mode === "summary" || mode === "comment") && text.trim().split(/\s+/).length < 15) {
       return done(200, "ok_short", { result: text.trim(), notice: "Vocale molto breve: non serve riassumerlo, ecco il testo." });
     }
+    const tone = body?.tone === "sharp" ? "sharp" : "serious";
+    const useFun = mode === "comment" && tone === "sharp";
     const rewrite = mode === "clean" || mode === "translate"; // l'output è lungo quanto il testo
     const inTok = text.length / 2.5 + 200, outTok = rewrite ? Math.min(6000, text.length / 2.5 + 100) : Math.min(1500, text.length / 3 + 100);
-    if (!(await reserve(inTok * LLM_IN_MICRO_PER_TOKEN + outTok * LLM_OUT_MICRO_PER_TOKEN)))
+    const cost = (inTok * LLM_IN_MICRO_PER_TOKEN + outTok * LLM_OUT_MICRO_PER_TOKEN) * (useFun ? FUN_COST_X : mode === "comment" ? 1.4 : 1);
+    if (!(await reserve(cost)))
       return done(429, "budget", { error: "budget", message: "Tetto di spesa mensile raggiunto. Si sblocca il mese prossimo." });
     // punti proporzionati alla durata (max 6 al minuto): secondi dal player, altrimenti stimati dalle parole
     const words = text.trim().split(/\s+/).length;
@@ -280,17 +294,17 @@ Deno.serve(async (req) => {
     const maxBullets = maxBulletsFor(secs);
     // più vocali della stessa chat, uniti in ordine cronologico e separati da una riga vuota
     const parts = Math.min(MAX_PARTS, Math.max(1, Math.floor(Number(body?.parts)) || 1));
-    const partsNote = parts > 1 && (mode === "bullets" || mode === "summary")
+    const partsNote = parts > 1 && (mode === "bullets" || mode === "summary" || mode === "comment")
       ? ` Il testo è la trascrizione di ${parts} vocali consecutivi di una stessa chat, in ordine cronologico, separati da una riga vuota: riassumili come un'unica conversazione continua, senza elencare i vocali uno per uno e senza ripetizioni.`
       : "";
     const sysPrompt = (rewrite ? SYSTEM_BASE : SYSTEM) + partsNote +
-      (mode === "bullets" ? bulletsPrompt(maxBullets) : mode === "summary" ? summaryPrompt(maxSentencesFor(secs)) : mode === "translate" && body?.target === "en" ? TRANSLATE_EN : MODES[mode]);
-    const ask = async (temperature: number, extra = ""): Promise<string | null> => {
+      (mode === "bullets" ? bulletsPrompt(maxBullets) : mode === "summary" ? summaryPrompt(maxSentencesFor(secs)) : mode === "comment" ? commentPrompt(maxSentencesFor(secs), tone) : mode === "translate" && body?.target === "en" ? TRANSLATE_EN : MODES[mode]);
+    const askWith = async (model: string, temperature: number, extra = ""): Promise<string | null> => {
       const r = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
         body: JSON.stringify({
-          model: LLM_MODEL,
+          model,
           temperature,
           max_tokens: rewrite ? Math.min(6000, Math.max(300, Math.ceil(words * 2.5))) : 1500,
           messages: [
@@ -302,7 +316,14 @@ Deno.serve(async (req) => {
       if (!r.ok) return null;
       return String((await r.json()).choices?.[0]?.message?.content ?? "").trim();
     };
-    let out = await ask(rewrite ? 0.1 : 0.2);
+    const ask = async (temperature: number, extra = ""): Promise<string | null> => {
+      if (useFun) {
+        const o = await askWith(FUN_MODEL, Math.max(temperature, 0.7), extra);
+        if (o !== null) return o;
+      }
+      return askWith(LLM_MODEL, temperature, extra);
+    };
+    let out = await ask(rewrite ? 0.1 : mode === "comment" ? 0.6 : 0.2);
     if (out === null) return done(502, "llm_error", { error: "provider", message: "Errore del servizio di riassunto." });
     let outcome = "ok";
     if (mode === "bullets") {
@@ -322,6 +343,27 @@ Deno.serve(async (req) => {
         out = text;
         outcome = "ok_summaryfail";
         notice = "Non riesco a riassumerlo in modo sicuro: ti mostro la trascrizione originale.";
+      }
+    }
+    if (mode === "comment") {
+      // riassunto fedele + commenti che non introducono fatti nuovi; un solo ritentativo, poi niente commento
+      const compose = (raw: string) => {
+        const p = parseComment(raw);
+        const summary = dropEmptyClaims(p.summary) || p.summary;
+        return { summary, ok: !!summary && summaryFaithful(summary, text), comments: safeComments(p.comments, text), asked: p.comments.length };
+      };
+      let c = compose(out);
+      if (!c.ok || (c.asked > 0 && c.comments.length === 0)) {
+        const again = (await reserve(cost)) ? await ask(0.3, " ATTENZIONE: nel riassunto usa solo parole, nomi e numeri presenti nel testo; nei commenti niente cifre, nomi o fatti che non sono nel testo, e niente insulti.") : null;
+        if (again) { const c2 = compose(again); if (c2.ok) { c = c2; outcome = "ok_retry"; } }
+      }
+      if (!c.ok) {
+        out = text;
+        outcome = "ok_commentfail";
+        notice = "Non riesco a commentarlo in modo sicuro: ti mostro la trascrizione originale.";
+      } else {
+        out = c.summary + (c.comments.length ? `\n\nCommento:\n${c.comments.map((x) => `- ${x}`).join("\n")}` : "");
+        if (!c.comments.length) { outcome = "ok_nocomment"; notice = "Nessun commento sicuro da aggiungere: ecco il riassunto."; }
       }
     }
     if (mode === "clean" && !cleanFaithful(out, text)) {

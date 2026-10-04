@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_SECONDS = 10 * 60;
-const TITLES = { full: 'Trascrizione completa', bullets: 'Riassunto per punti', clean: 'Testo pulito', summary: 'Riassunto', translate: 'Traduzione' };
+const TITLES = { bullets: 'Riassunto per punti', clean: 'Testo pulito', summary: 'Riassunto', comment: 'Commento', translate: 'Traduzione' };
 const safeLS = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* ignora */ } },
@@ -174,7 +174,10 @@ function renderResult(mode, text) {
   lastOutput = text;
   const box = $('out');
   box.textContent = '';
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  let lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const ci = lines.findIndex((l) => /^commento\s*:\s*$/i.test(l));
+  const comments = ci >= 0 ? lines.slice(ci + 1) : [];
+  if (ci >= 0) lines = lines.slice(0, ci);
   for (const [i, l] of lines.entries()) {
     const b = i === 0 ? /^in breve\s*[:\-–]\s*(.+)$/i.exec(l) : null;
     if (b) { // riga "In breve" in cima, separata dai punti
@@ -194,8 +197,37 @@ function renderResult(mode, text) {
     el.textContent = (m ? m[2] : l).replace(/\*\*/g, '');
     box.appendChild(el);
   }
+  if (comments.length) { // commento in un riquadro a parte: il riassunto sopra resta quello fedele
+    const wrap = document.createElement('div');
+    wrap.className = 'comment';
+    const lab = document.createElement('small');
+    lab.textContent = currentTone() === 'sharp' ? 'Commento pungente' : 'Commento';
+    wrap.appendChild(lab);
+    for (const c of comments) {
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.textContent = c.replace(/^([-*•])\s+/, '').replace(/\*\*/g, '');
+      wrap.appendChild(el);
+    }
+    if (currentTone() !== 'sharp') {
+      const note = document.createElement('p');
+      note.className = 'c-note';
+      note.textContent = 'Opinione generata dall’AI: non è un consiglio finanziario, legale o medico.';
+      wrap.appendChild(note);
+    }
+    box.appendChild(wrap);
+  }
   $('result-title').textContent = TITLES[mode];
 }
+// tono del commento (Serio / Pungente), ricordato sul telefono
+const currentTone = () => (safeLS.get('vb_tone') === 'sharp' ? 'sharp' : 'serious');
+function syncTone() {
+  const on = document.querySelector('input[name=mode]:checked');
+  show('tone', !!on && on.value === 'comment');
+  document.querySelectorAll('#tone button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tone === currentTone())));
+}
+document.querySelectorAll('#tone button').forEach((b) => { b.onclick = () => { safeLS.set('vb_tone', b.dataset.tone); syncTone(); }; });
+document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', syncTone));
 
 // registrazione fatta nell'app (nome 'registrazione-…'): la traduzione va in inglese, per scrivere a qualcuno in inglese
 const isRecording = (e) => !!e && /^registrazione-/.test(e.name || '');
@@ -288,6 +320,7 @@ async function load(forced) {
   const last = safeLS.get('vb_mode') || 'bullets';
   const r = document.querySelector(`input[name=mode][value=${TITLES[last] ? last : 'bullets'}]`);
   r.checked = true;
+  syncTone();
   renderGroup();
   showView('pick');
   if (trimmed) setStatus('Limite di 10 minuti totali: l’ultimo vocale non è stato aggiunto.', true);
@@ -471,7 +504,7 @@ function renderEvents(list) {
 }
 
 const setStep = (n, state) => { $('ws-' + n).dataset.state = state; };
-const SUM_LABELS = { bullets: 'Preparo il riassunto per punti', clean: 'Pulisco il testo', summary: 'Scrivo il riassunto', translate: 'Traduco il testo' };
+const SUM_LABELS = { bullets: 'Preparo il riassunto per punti', clean: 'Pulisco il testo', summary: 'Scrivo il riassunto', comment: 'Scrivo riassunto e commento', translate: 'Traduco il testo' };
 
 async function run() {
   if (busy) return;
@@ -480,11 +513,10 @@ async function run() {
   busy = true;
   cancelled = false;
   setStatus('');
-  $('ws-2').hidden = mode === 'full';
   $('ws-2-label').textContent = SUM_LABELS[mode] || '';
   const allDone = items.every((i) => i.text);
   setStep(1, allDone ? 'done' : 'active');
-  setStep(2, allDone && mode !== 'full' ? 'active' : 'pending');
+  setStep(2, allDone ? 'active' : 'pending');
   showView('working');
   history.pushState({ v: 'working' }, '');
   writeGroup(items, false).catch(() => {}); // il gruppo si chiude: la prossima condivisione ne apre uno nuovo
@@ -496,14 +528,12 @@ async function run() {
     const failed = items.length - good.length;
     if (!good.length) throw (settled.find((r) => r.status === 'rejected') || {}).reason || new ApiError('empty', 'Nessun parlato riconosciuto.');
     setStep(1, 'done');
-    if (mode !== 'full') setStep(2, 'active');
+    setStep(2, 'active');
     const multi = good.length > 1;
     const combined = good.map((x) => x.text).join('\n\n');
     let notice = '';
     const [out, evs] = await Promise.all([
-      mode === 'full'
-        ? (multi ? good.map((x) => `Vocale ${x.i + 1}${itemDate(x.it) ? ' · ' + itemDate(x.it) : ''}\n${x.text}`).join('\n\n') : good[0].text)
-        : api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text: combined, seconds: totalSeconds() || undefined, parts: multi ? good.length : undefined, target: items.length === 1 && isRecording(items[0]) ? 'en' : 'it' }) }).then((d) => { notice = d.notice || ''; return d.result; }),
+      api({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode, text: combined, seconds: totalSeconds() || undefined, parts: multi ? good.length : undefined, tone: mode === 'comment' ? currentTone() : undefined, target: items.length === 1 && isRecording(items[0]) ? 'en' : 'it' }) }).then((d) => { notice = d.notice || ''; return d.result; }),
       Promise.all(good.map((x) => getEvent(x.it, x.text))),
     ]);
     if (cancelled) throw new ApiError('cancelled', '');
