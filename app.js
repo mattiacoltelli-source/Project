@@ -211,10 +211,11 @@ function renderResult(mode, text) {
       continue;
     }
     const m = /^([-*•]|\d+[.)])\s+(.*)$/.exec(l);
-    if (!m && lastItem && /^\s{2,}/.test(rows[i])) { // riga di dettaglio rientrata: sotto il suo punto
+    if (!m && lastItem) { // riga subito dopo un punto: è il suo dettaglio (l'AI non sempre la rientra), una sola per punto
       const sub = document.createElement('small');
       sub.textContent = l.replace(/\*\*/g, '');
       lastItem.appendChild(sub);
+      lastItem = null;
       continue;
     }
     const el = document.createElement(m ? 'div' : 'p');
