@@ -78,7 +78,9 @@ const bulletsPrompt = (max: number) =>
   `Se dal vocale si capisce con certezza di cosa o di chi si parla (il tema è detto o evidente), apri con una riga "In breve: <una sola frase in italiano>"; ` +
   `se il contesto non è esplicito o il vocale parte a metà discorso, NON scrivere quella riga. Non inventare né dedurre il contesto. ` +
   `Se un punto parla di un impegno o di un invito, riporta sempre quando, dove e con chi, se detti. ` +
-  `Poi i punti: ogni punto è una riga che inizia con "- " (il tema, in poche parole) seguita da UNA riga di dettaglio subito sotto, che inizia con due spazi (non con "-"): una frase breve con l'informazione concreta detta nel vocale (cosa, chi, quando, dove, numeri). Se non c'è nulla di concreto da aggiungere, ometti la riga di dettaglio. Nessun'altra introduzione.`;
+  `Poi i punti: ogni punto è una riga che inizia con "- " (il tema come titolo nominale, in poche parole, es. "Vannacci e la semantica", "I like a Pelli") seguita da UNA riga di dettaglio subito sotto, che inizia con due spazi (non con "-"): un'affermazione secca e concreta con il contenuto detto nel vocale (cosa, chi, quando, dove, numeri), con soggetto e verbo attivo (es. "Usa il doppio senso per far ridere."). ` +
+  `Nei dettagli NON usare formule vaghe o impersonali: vietati "Si parla di", "Si menziona", "Si osserva", "Si discute", "Viene detto", "Si fa riferimento", "L'interlocutore", "Chi parla dice che". Vai direttamente al contenuto. Se il vocale è un'opinione di chi parla, riportala così com'è, senza trasformarla in fatto oggettivo né aggiungere valutazioni tue. ` +
+  `Se non c'è nulla di concreto da aggiungere, ometti la riga di dettaglio. Nessun'altra introduzione.`;
 const EVENT_PROMPT =
   "Elenca gli impegni in programma citati nel testo (massimo 3, nell'ordine in cui compaiono): incontri e appuntamenti, ma anche attività con un giorno, un'ora o un luogo " +
   "(es. una partita, una visita, una colazione, un volo, una lezione), fatte da chi parla o da altri. Un impegno = un oggetto: non fondere impegni diversi. " +
@@ -103,7 +105,7 @@ const SYSTEM =
   SYSTEM_BASE +
   "Tieni chiaro chi fa cosa, ma senza ripetere il soggetto: preferisci forme dirette o nominali ('Invito a cena da Luca alle 20', 'Richiesta di portare il vino', 'Proposta di vedersi giovedì'), " +
   "usa i nomi quando sono detti, e scrivi 'chi parla' solo se serve a evitare ambiguità (mai in più di un punto, mai per iniziare ogni riga). " +
-  "Non usare forme impersonali ('bisogna', 'si deve') quando il soggetto è una persona precisa. ";
+  "Non usare forme impersonali ('bisogna', 'si deve', 'si parla di', 'si menziona', 'si osserva') né formule vaghe: vai direttamente al contenuto detto. ";
 
 const cors = {
   "Access-Control-Allow-Origin": ORIGIN,
