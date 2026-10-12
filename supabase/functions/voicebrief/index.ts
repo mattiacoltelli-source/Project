@@ -169,7 +169,8 @@ Deno.serve(async (req) => {
       step = "transcribe";
       const declared = Number(req.headers.get("content-length") ?? 0);
       if (declared > MAX_BYTES + 100_000) return done(413, "too_big", { error: "too_big", message: "File oltre 10 MB." });
-      const file = (await req.formData()).get("audio");
+      const form = await req.formData();
+      const file = form.get("audio");
       if (!(file instanceof File)) return done(400, "no_file", { error: "no_file", message: "Nessun file audio." });
       bytes = file.size;
       if (bytes === 0) return done(400, "empty", { error: "invalid_audio", message: "File vuoto." });
@@ -192,6 +193,7 @@ Deno.serve(async (req) => {
       fd.append("file", new File([buf], `audio.${ext}`, { type: isOgg ? "audio/ogg" : (file.type.split(";")[0] || "audio/mpeg") }));
       fd.append("model", STT_MODEL);
       fd.append("response_format", "json");
+      if (form.get("language") === "it") fd.append("language", "it"); // lingua nota: trascrive meglio; altrimenti la riconosce da solo
       const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}` },
