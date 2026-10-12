@@ -78,7 +78,9 @@ const bulletsPrompt = (max: number) =>
   `Se dal vocale si capisce con certezza di cosa o di chi si parla (il tema è detto o evidente), apri con una riga "In breve: <una sola frase in italiano>"; ` +
   `se il contesto non è esplicito o il vocale parte a metà discorso, NON scrivere quella riga. Non inventare né dedurre il contesto. ` +
   `Se un punto parla di un impegno o di un invito, riporta sempre quando, dove e con chi, se detti. ` +
-  `Poi i punti: ogni punto è una riga che inizia con "- " (il tema, in poche parole) seguita da UNA riga di dettaglio subito sotto, che inizia con due spazi (non con "-"): una frase breve con l'informazione concreta detta nel vocale (cosa, chi, quando, dove, numeri). Se non c'è nulla di concreto da aggiungere, ometti la riga di dettaglio. Nessun'altra introduzione.`;
+  `Poi i punti: ogni punto è una riga che inizia con "- " (il tema come titolo nominale, in poche parole, es. "Cena di sabato", "Richiesta di aiuto col trasloco") seguita da UNA riga di dettaglio subito sotto, che inizia con due spazi (non con "-"): un'affermazione secca e concreta con il contenuto detto nel vocale (cosa, chi, quando, dove, numeri), con soggetto e verbo attivo (es. "Propone di vedersi alle 20 da Luca.", "Chiede a Marco di portare il furgone."). ` +
+  `Nei dettagli NON usare formule vaghe o impersonali: vietati "Si parla di", "Si menziona", "Si osserva", "Si discute", "Viene detto", "Si fa riferimento", "L'interlocutore", "Chi parla dice che". Vai direttamente al contenuto. Se il vocale è un'opinione di chi parla, riportala così com'è, senza trasformarla in fatto oggettivo né aggiungere valutazioni tue. ` +
+  `Se non c'è nulla di concreto da aggiungere, ometti la riga di dettaglio. Nessun'altra introduzione.`;
 const EVENT_PROMPT =
   "Elenca gli impegni in programma citati nel testo (massimo 3, nell'ordine in cui compaiono): incontri e appuntamenti, ma anche attività con un giorno, un'ora o un luogo " +
   "(es. una partita, una visita, una colazione, un volo, una lezione), fatte da chi parla o da altri. Un impegno = un oggetto: non fondere impegni diversi. " +
@@ -103,7 +105,7 @@ const SYSTEM =
   SYSTEM_BASE +
   "Tieni chiaro chi fa cosa, ma senza ripetere il soggetto: preferisci forme dirette o nominali ('Invito a cena da Luca alle 20', 'Richiesta di portare il vino', 'Proposta di vedersi giovedì'), " +
   "usa i nomi quando sono detti, e scrivi 'chi parla' solo se serve a evitare ambiguità (mai in più di un punto, mai per iniziare ogni riga). " +
-  "Non usare forme impersonali ('bisogna', 'si deve') quando il soggetto è una persona precisa. ";
+  "Non usare forme impersonali ('bisogna', 'si deve', 'si parla di', 'si menziona', 'si osserva') né formule vaghe: vai direttamente al contenuto detto. ";
 
 const cors = {
   "Access-Control-Allow-Origin": ORIGIN,
@@ -167,7 +169,8 @@ Deno.serve(async (req) => {
       step = "transcribe";
       const declared = Number(req.headers.get("content-length") ?? 0);
       if (declared > MAX_BYTES + 100_000) return done(413, "too_big", { error: "too_big", message: "File oltre 10 MB." });
-      const file = (await req.formData()).get("audio");
+      const form = await req.formData();
+      const file = form.get("audio");
       if (!(file instanceof File)) return done(400, "no_file", { error: "no_file", message: "Nessun file audio." });
       bytes = file.size;
       if (bytes === 0) return done(400, "empty", { error: "invalid_audio", message: "File vuoto." });
@@ -190,6 +193,7 @@ Deno.serve(async (req) => {
       fd.append("file", new File([buf], `audio.${ext}`, { type: isOgg ? "audio/ogg" : (file.type.split(";")[0] || "audio/mpeg") }));
       fd.append("model", STT_MODEL);
       fd.append("response_format", "json");
+      if (form.get("language") === "it") fd.append("language", "it"); // lingua nota: trascrive meglio; altrimenti la riconosce da solo
       const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
         headers: { Authorization: `Bearer ${key}` },

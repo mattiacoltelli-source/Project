@@ -123,6 +123,7 @@ function showView(view) { // 'idle' | 'pick' | 'recording' | 'working' | 'result
   show('brand', view !== 'result');
   curView = view;
   updateInstall();
+  show('lang', view === 'idle' || view === 'pick'); // la lingua conta solo prima di trascrivere
   show('rec-start', view === 'idle'); // registrare è un'opzione secondaria, solo da qui
   if (view !== 'pick') pausePlayer();
 }
@@ -246,6 +247,26 @@ function syncTone() {
 }
 document.querySelectorAll('#tone button').forEach((b) => { b.onclick = () => { safeLS.set('vb_tone', b.dataset.tone); syncTone(); }; });
 document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', syncTone));
+
+// lingua del vocale: Italiano (predefinita, trascrive meglio) o Automatica (per vocali in altre lingue), ricordata sul telefono
+const currentLang = () => (safeLS.get('vb_lang') === 'auto' ? 'auto' : 'it');
+function syncLang() {
+  document.querySelectorAll('#lang button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === currentLang())));
+}
+document.querySelectorAll('#lang button').forEach((b) => {
+  b.onclick = () => {
+    if (b.dataset.lang === currentLang()) return;
+    safeLS.set('vb_lang', b.dataset.lang);
+    syncLang();
+    // le trascrizioni già fatte con l'altra lingua si rifanno alla prossima elaborazione
+    items.forEach((it) => {
+      if (!it.text || it.lang === currentLang()) return;
+      delete it.text; delete it.lang; evCache.delete(it.id);
+      patchItem(it.id, { text: undefined, lang: undefined }).catch(() => {});
+    });
+  };
+});
+syncLang();
 
 // registrazione fatta nell'app (nome 'registrazione-…'): la traduzione va in inglese, per scrivere a qualcuno in inglese
 const isRecording = (e) => !!e && /^registrazione-/.test(e.name || '');
@@ -416,10 +437,13 @@ function getTranscript(it) {
     if (it.duration && it.duration > MAX_SECONDS) throw new ApiError('too_long', 'Audio oltre 10 minuti.');
     const fd = new FormData();
     fd.append('audio', normalizedFile(it));
+    const lang = currentLang();
+    if (lang === 'it') fd.append('language', 'it');
+    it.lang = lang; // con quale lingua è stato trascritto
     const data = await api({ method: 'POST', body: fd });
     if (!data.text) throw new ApiError('empty', 'Nessun parlato riconosciuto nell’audio.');
     it.text = data.text;
-    patchItem(it.id, { text: data.text }).catch(() => {});
+    patchItem(it.id, { text: data.text, lang }).catch(() => {});
     return data.text;
   })().finally(() => { if (jobs.get(it.id) === job) jobs.delete(it.id); });
   jobs.set(it.id, job);
